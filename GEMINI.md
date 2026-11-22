@@ -6,8 +6,8 @@ This document establishes the official engineering guidelines, architectural inv
 
 ## 1. Project Invariants
 
-1. **High-Craft Quality (Not a Toy Project):**  
-   Every line of code must be production-ready. No hacks, no hardcoded magic paths, no ignored compiler warnings.
+1. **Production-Grade Engineering:**  
+   Every line of code must adhere to production-ready standards. No temporary hacks, no hardcoded magic paths, and no suppressed compiler warnings.
 2. **Deterministic & Truthful (Zero Hallucination):**  
    The core value of `git-lineage` is trust. If a commit has no PR, or a commit message is blank, explicitly output `[No rationale recorded]`. Never invent, guess, or extrapolate developer intent.
 3. **Local-First & Offline Resilience:**  
