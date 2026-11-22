@@ -108,18 +108,28 @@ Within **sub-second time**, `git-lineage` traverses parent commits, tracks code 
 
 ---
 
-## Why Not Existing Tools?
+## The Archaeological Matrix: `git log -L` vs. `git blame + gh/glab` vs. `git-lineage`
 
-| Capability | `git blame` | `git log -S` | GitLens (VS Code) | `git-lineage` |
-| :--- | :---: | :---: | :---: | :---: |
-| **Bypasses formatting / lint noise** | ❌ | ❌ | Partial (`-w`) | **Yes (Automatic `-w` & DAG walk)** |
-| **Follows code across file renames** | ❌ | Complex (`--follow`) | ❌ | **Yes (Automatic DAG tracking)** |
-| **Surfaces PR rationale & discussions** | ❌ | ❌ | Yes (GUI only) | **Yes (Terminal, Markdown & JSON)** |
-| **Multi-origin block dissection** | ❌ | ❌ | ❌ | **Yes (Isolates multi-commit lines)** |
-| **Locates companion test cases** | ❌ | ❌ | ❌ | **Yes (Heuristic test matcher)** |
-| **Multi-Platform (GitHub, GitLab, Bitbucket)** | ❌ | ❌ | Partial (GitHub/GitLab) | **Yes (GitHub, GitLab, Bitbucket, Generic)** |
-| **Machine-readable for AI agents** | ❌ | ❌ | ❌ | **Yes (`--json` MCP-ready)** |
-| **Runtime footprint** | Built-in | Built-in | Heavy (Node/Electron) | **Single static binary (<8MB)** |
+Developers frequently ask: *"How does `git-lineage` compare to `git log -L` and standard `git blame`?"*
+
+The short answer:
+* **`git log -L` answers: "How did this code mutate over time?"**  
+  Built into Git and operates strictly offline. Shows the line-by-line before/after diff for every change touching a range or function.
+* **`git-lineage` answers: "Why does this code exist, and what was the intent?"**  
+  Crosses the Git boundary into remote code review platforms. Follows past reformatting noise to the introducing genesis commit, surfaces PR/MR descriptions, reviewer rationale, and linked Jira tickets, and produces deterministic, token-efficient JSON for AI agents.
+
+| Capability | `git log -L` (Built-in Git) | `git blame` + `glab`/`gh` script | `git-lineage` |
+| :--- | :---: | :---: | :---: |
+| **Primary Question** | "How did code change?" | "Who touched this line?" | **"Why does this code exist?"** |
+| **Data Scope** | Local commits only | Local commit + naive remote API | **Local DAG + PRs, Reviews, Tickets & Discussions** |
+| **Bypasses formatting / lint noise** | Manual inspection | ❌ Stops at formatting commits | **✅ Automatic (`-w` DAG traversal to genesis)** |
+| **PR / MR Correlation** | ❌ None (Git doesn't store PRs) | ❌ Often attaches wrong PR (e.g. omnibus merges) | **✅ Validated ticket & branch key correlation** |
+| **Substantive Reviewer Rationale** | ❌ None | ❌ Unstructured comments & "+1" noise | **✅ Surfaces verified architectural decisions** |
+| **Multi-Origin Block Dissection** | ❌ Raw diff hunks | ❌ Blames entire block to single SHA | **✅ Dissects contiguous lines into distinct origins** |
+| **Unified Diff Inspection** | ✅ Built-in patch per commit | ❌ Requires manual `git show` | **✅ Optional `--diff` (`-p`) flag directly in output** |
+| **Function-level targeting** | ✅ `-L :func:file` | ❌ Line numbers only | **✅ `file:func`, `file::func`, or `-L :func:file`** |
+| **AI Agent Consumption** | ❌ 1,000–5,000+ tokens of raw diffs | ❌ Unstructured & unverified | **✅ <500 tokens structured JSON with confidence tiers** |
+| **Zero-Hallucination Fallback** | ✅ Built-in | ❌ Fails without remote API | **✅ Universal Git commit trailers (`See merge request !123`)** |
 
 ---
 
@@ -164,6 +174,12 @@ git lineage src/billing/stripe_webhook.ts:88
 
 # Trace a block of lines
 git lineage src/billing/stripe_webhook.ts:80-120
+
+# Trace a named function or method across file shifts
+git lineage src/billing/stripe_webhook.ts:handleWebhook
+
+# Include the introducing unified diff patch directly
+git lineage src/billing/stripe_webhook.ts:88 --diff
 
 # Export clean Markdown for PR reviews or discussions
 git lineage src/billing/stripe_webhook.ts:88 --md

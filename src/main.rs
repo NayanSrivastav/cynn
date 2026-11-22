@@ -35,7 +35,7 @@ AGENT FORENSIC ENGINE:\n  \
 • Multi-origin dissection traces each sub-slice of a block to its exact introducing commit."
 )]
 struct Cli {
-    /// Target file and line (e.g., path/to/file.rs:42 or path/to/file.rs:40-60)
+    /// Target file and line or function (e.g., path/to/file.rs:42, file.rs:40-60, file.rs:functionName, or -L :func:file)
     #[arg(value_name = "TARGET")]
     target: String,
 
@@ -50,6 +50,10 @@ struct Cli {
     /// Output structured JSON for AI agents and tooling
     #[arg(long)]
     json: bool,
+
+    /// Include the unified diff patch from the introducing genesis commit
+    #[arg(short = 'p', long = "diff")]
+    diff: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -68,7 +72,7 @@ fn main() -> anyhow::Result<()> {
     // 3. Analyze genesis provenance
     let analyzer = GenesisAnalyzer::new(&repo);
     let dossier = analyzer
-        .analyze(&target)
+        .analyze_with_options(&target, args.diff)
         .map_err(|e| anyhow::anyhow!("Analysis failed: {e}"))?;
 
     // 4. Render output based on flags

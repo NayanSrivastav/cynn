@@ -248,5 +248,36 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
         dossier.confidence_docs.underline().blue()
     ));
 
+    // Genesis Diff (when requested via --diff)
+    if let Some(ref diff) = dossier.genesis_diff {
+        out.push('\n');
+        out.push_str(&format!(
+            "🔍 {}\n",
+            "Genesis Diff (Introducing Patch)".bold()
+        ));
+        for line in diff.lines().take(120) {
+            if line.starts_with('+') && !line.starts_with("+++") {
+                out.push_str(&format!("   {}\n", line.green()));
+            } else if line.starts_with('-') && !line.starts_with("---") {
+                out.push_str(&format!("   {}\n", line.red()));
+            } else if line.starts_with('@') {
+                out.push_str(&format!("   {}\n", line.cyan()));
+            } else {
+                out.push_str(&format!("   {}\n", line.dimmed()));
+            }
+        }
+        let total_lines = diff.lines().count();
+        if total_lines > 120 {
+            out.push_str(&format!(
+                "   {}\n",
+                format!(
+                    "... [{} lines truncated, use git show to inspect full diff]",
+                    total_lines - 120
+                )
+                .dimmed()
+            ));
+        }
+    }
+
     out
 }

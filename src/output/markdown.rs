@@ -182,5 +182,11 @@ pub fn render_markdown(dossier: &LineageDossier) -> String {
         ));
     }
 
+    if let Some(ref diff) = dossier.genesis_diff {
+        out.push_str("\n#### 🔍 Genesis Diff (Introducing Patch)\n\n```diff\n");
+        out.push_str(diff);
+        out.push_str("\n```\n");
+    }
+
     out
 }

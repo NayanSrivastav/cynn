@@ -309,6 +309,29 @@ impl GitRepo {
         })
     }
 
+    /// Retrieve the unified diff patch for a given commit affecting a file.
+    pub fn get_commit_diff(&self, sha: &str, rel_path: &Path) -> Result<String, String> {
+        let output = Command::new("git")
+            .arg("show")
+            .arg("--format=format:")
+            .arg("--no-prefix")
+            .arg("--color=never")
+            .arg(sha)
+            .arg("--")
+            .arg(rel_path)
+            .current_dir(&self.root)
+            .output()
+            .map_err(|e| format!("Failed to execute git show diff: {e}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("git show diff failed: {stderr}"));
+        }
+
+        let diff = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok(diff)
+    }
+
     /// Trace the evolutionary history of a line range backward through the Git DAG.
     /// Returns the commits that touched this range, ordered from most recent to oldest.
     /// The last commit in this list is the True Genesis Commit where the lines were born.

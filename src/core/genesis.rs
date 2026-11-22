@@ -106,6 +106,8 @@ pub struct LineageDossier {
     pub evolution: Vec<EvolutionMilestone>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snippet_accordion: Option<AccordionSnippet>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub genesis_diff: Option<String>,
 }
 
 pub struct GenesisAnalyzer<'a> {
@@ -118,10 +120,27 @@ impl<'a> GenesisAnalyzer<'a> {
     }
 
     /// Analyze the target file and line range to assemble the archaeological dossier
-    #[allow(clippy::too_many_lines)]
     pub fn analyze(&self, target: &Target) -> Result<LineageDossier, String> {
-        let start_line = target.start_line.unwrap_or(1);
-        let end_line = target.end_line.unwrap_or(start_line);
+        self.analyze_with_options(target, false)
+    }
+
+    /// Analyze the target with optional flags (e.g., `include_diff`)
+    #[allow(clippy::too_many_lines)]
+    pub fn analyze_with_options(
+        &self,
+        target: &Target,
+        include_diff: bool,
+    ) -> Result<LineageDossier, String> {
+        let (start_line, end_line, function_resolved) = if let Some(ref func) = target.function_name
+        {
+            let file_lines = self.repo.read_file_lines(&target.path)?;
+            let (s, e) = crate::core::target::resolve_function_range(&file_lines, func)?;
+            (s, e, Some(func.clone()))
+        } else {
+            let start = target.start_line.unwrap_or(1);
+            let end = target.end_line.unwrap_or(start);
+            (start, end, None)
+        };
 
         // 1. Initial porcelain blame with whitespace filtering (-w)
         let entries = self
@@ -282,13 +301,48 @@ impl<'a> GenesisAnalyzer<'a> {
             "offline".to_string()
         };
 
+        let genesis_diff = if include_diff {
+            if let Some(ref commit) = final_genesis {
+                self.repo.get_commit_diff(&commit.sha, &target.path).ok()
+            } else if is_multi_origin {
+                let mut combined = String::new();
+                for sha in &distinct_genesis_shas {
+                    if let Ok(d) = self.repo.get_commit_diff(sha, &target.path) {
+                        if !d.is_empty() {
+                            if !combined.is_empty() {
+                                combined.push_str("\n\n");
+                            }
+                            combined.push_str(&d);
+                        }
+                    }
+                }
+                if combined.is_empty() {
+                    None
+                } else {
+                    Some(combined)
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let line_range = if let Some(ref func) = function_resolved {
+            if start_line == end_line {
+                format!("{start_line} (function: {func})")
+            } else {
+                format!("{start_line}-{end_line} (function: {func})")
+            }
+        } else if start_line == end_line {
+            format!("{start_line}")
+        } else {
+            format!("{start_line}-{end_line}")
+        };
+
         Ok(LineageDossier {
             file_path: target.path.display().to_string(),
-            line_range: if start_line == end_line {
-                format!("{start_line}")
-            } else {
-                format!("{start_line}-{end_line}")
-            },
+            line_range,
             code_snippet,
             is_multi_origin,
             genesis_commit: final_genesis,
@@ -305,6 +359,7 @@ impl<'a> GenesisAnalyzer<'a> {
             related_tests,
             evolution: milestones,
             snippet_accordion,
+            genesis_diff,
         })
     }
 

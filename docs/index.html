@@ -481,59 +481,80 @@
 
     <section class="compare-section" id="comparison">
       <div class="container">
-        <h2 class="section-title">Why Standard Tools Fall Short</h2>
+        <h2 class="section-title">The Archaeological Matrix: How vs. Why</h2>
+        <p style="text-align: center; color: var(--text-dim); max-width: 780px; margin: -16px auto 32px;">
+          <code>git log -L</code> shows <strong>how</strong> code mutated over time with raw diffs. <strong>git-lineage</strong> answers <strong>why</strong> code was introduced by linking Git commits to PR descriptions, reviewer debates, and Jira tickets.
+        </p>
         <div class="table-container">
           <table>
             <thead>
               <tr>
                 <th>Capability</th>
-                <th>git blame</th>
-                <th>GitLens</th>
+                <th>git log -L (Git)</th>
+                <th>git blame + API script</th>
                 <th>git-lineage</th>
               </tr>
             </thead>
             <tbody>
               <tr>
+                <td><strong>Primary Question</strong></td>
+                <td>"How did code change?"</td>
+                <td>"Who touched this line?"</td>
+                <td class="check"><strong>"Why does code exist?"</strong></td>
+              </tr>
+              <tr>
                 <td>Bypasses formatting &amp; Prettier noise</td>
-                <td class="cross">✕</td>
-                <td class="cross">Partial</td>
-                <td class="check">✓ Automatic</td>
+                <td class="cross">Manual diff check</td>
+                <td class="cross">✕ Stops at formatting</td>
+                <td class="check">✓ Automatic DAG walk (-w)</td>
               </tr>
               <tr>
-                <td>Follows code across file renames</td>
-                <td class="cross">✕</td>
-                <td class="cross">✕</td>
-                <td class="check">✓ Automatic</td>
+                <td>PR / MR Context &amp; Intent</td>
+                <td class="cross">✕ None (Local Git only)</td>
+                <td class="cross">✕ Often wrong PR</td>
+                <td class="check">✓ Validated ticket &amp; branch match</td>
               </tr>
               <tr>
-                <td>Multi-origin block dissection</td>
-                <td class="cross">✕</td>
-                <td class="cross">✕</td>
-                <td class="check">✓ Automatic</td>
+                <td>Substantive Reviewer Rationale</td>
+                <td class="cross">✕ None</td>
+                <td class="cross">✕ Comment noise</td>
+                <td class="check">✓ Filtered technical decisions</td>
               </tr>
               <tr>
-                <td>Surfaces PR reviewer discussions</td>
-                <td class="cross">✕</td>
-                <td class="cross">Partial (GUI)</td>
-                <td class="check">✓ Built-in</td>
+                <td>Multi-Origin Block Dissection</td>
+                <td class="cross">Raw diff hunks</td>
+                <td class="cross">✕ Blames entire block to 1 SHA</td>
+                <td class="check">✓ Per-line genesis attribution</td>
               </tr>
               <tr>
-                <td>Multi-Platform (GitHub, GitLab, Bitbucket)</td>
-                <td class="cross">✕</td>
-                <td class="cross">Partial</td>
-                <td class="check">✓ Universal</td>
+                <td>Unified Diff Inspection</td>
+                <td class="check">✓ Built-in diffs</td>
+                <td class="cross">✕ Manual git show</td>
+                <td class="check">✓ Optional --diff (-p) flag</td>
+              </tr>
+              <tr>
+                <td>Function-Level Targeting</td>
+                <td class="check">✓ -L :func:file</td>
+                <td class="cross">✕ Line numbers only</td>
+                <td class="check">✓ file:func or -L :func:file</td>
               </tr>
               <tr>
                 <td>Machine-readable for AI agents</td>
-                <td class="cross">✕</td>
-                <td class="cross">✕</td>
-                <td class="check">✓ JSON Schema</td>
+                <td class="cross">✕ 1,000s of diff tokens</td>
+                <td class="cross">✕ Unstructured</td>
+                <td class="check">✓ &lt;500 tokens structured JSON</td>
               </tr>
               <tr>
-                <td>Runtime Overhead</td>
-                <td>None</td>
-                <td>Heavy (Electron)</td>
-                <td><strong>None (Single binary)</strong></td>
+                <td>Deterministic Confidence Tiers</td>
+                <td class="cross">✕ None</td>
+                <td class="cross">✕ None</td>
+                <td class="check">✓ High, Medium, Low, None</td>
+              </tr>
+              <tr>
+                <td>Air-Gapped / Offline Fallback</td>
+                <td class="check">✓ Built-in</td>
+                <td class="cross">✕ Requires API</td>
+                <td class="check">✓ Universal commit trailers</td>
               </tr>
             </tbody>
           </table>

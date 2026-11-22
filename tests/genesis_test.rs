@@ -65,6 +65,7 @@ fn test_genesis_analyzer_on_fixture_repo() {
         path: "billing.ts".into(),
         start_line: Some(2),
         end_line: Some(2),
+        function_name: None,
     };
 
     let analyzer = GenesisAnalyzer::new(&repo);
@@ -133,6 +134,7 @@ fn test_evolution_milestones_and_multi_origin_block() {
         path: "engine.rs".into(),
         start_line: Some(2),
         end_line: Some(2),
+        function_name: None,
     };
     let dossier2 = analyzer
         .analyze(&target_line2)
@@ -172,6 +174,7 @@ fn test_evolution_milestones_and_multi_origin_block() {
         path: "engine.rs".into(),
         start_line: Some(2),
         end_line: Some(3),
+        function_name: None,
     };
     let dossier_range = analyzer
         .analyze(&target_range)
@@ -254,6 +257,7 @@ fn test_code_moved_down() {
         path: "service.rs".into(),
         start_line: Some(21),
         end_line: Some(23),
+        function_name: None,
     };
     let dossier = analyzer
         .analyze(&target)
@@ -320,6 +324,7 @@ fn test_merge_commit_provenance() {
         path: "auth.rs".into(),
         start_line: Some(1),
         end_line: Some(3),
+        function_name: None,
     };
     let dossier = analyzer
         .analyze(&target)
@@ -383,6 +388,7 @@ fn test_squash_merge_provenance() {
         path: "cache.rs".into(),
         start_line: Some(1),
         end_line: Some(3),
+        function_name: None,
     };
     let dossier = analyzer
         .analyze(&target)
@@ -451,6 +457,7 @@ fn test_rebased_commit_provenance() {
         path: "logger.rs".into(),
         start_line: Some(1),
         end_line: Some(3),
+        function_name: None,
     };
     let dossier = analyzer
         .analyze(&target)
@@ -513,6 +520,7 @@ fn test_multi_platform_gitlab_and_bitbucket_trailers() {
         path: "metrics.rs".into(),
         start_line: Some(1),
         end_line: Some(3),
+        function_name: None,
     };
     let dossier = analyzer
         .analyze(&target)
@@ -590,6 +598,7 @@ fn test_divergent_branch_merge_provenance_and_author_attribution() {
         path: "auth.rs".into(),
         start_line: Some(1),
         end_line: Some(3),
+        function_name: None,
     };
 
     let dossier = analyzer
@@ -660,6 +669,7 @@ fn test_multiple_slices_resolving_to_same_genesis_commit() {
         path: "pipeline.rs".into(),
         start_line: Some(1),
         end_line: Some(5),
+        function_name: None,
     };
 
     let dossier = analyzer
@@ -723,6 +733,7 @@ fn test_substantive_body_confidence_filtering() {
         path: "filter.rs".into(),
         start_line: Some(1),
         end_line: Some(1),
+        function_name: None,
     };
     let dossier = analyzer.analyze(&target).unwrap();
     assert_eq!(
@@ -748,6 +759,7 @@ fn test_substantive_body_confidence_filtering() {
         path: "service.rs".into(),
         start_line: Some(1),
         end_line: Some(1),
+        function_name: None,
     };
     let dossier2 = analyzer.analyze(&target2).unwrap();
     assert_eq!(
@@ -759,4 +771,54 @@ fn test_substantive_body_confidence_filtering() {
         dossier2.intent_summary,
         "Enforce request throttling to protect downstream service from burst traffic."
     );
+}
+
+#[test]
+fn test_function_targeting_and_genesis_diff() {
+    let dir = tempdir().expect("Failed to create tempdir");
+    let repo_path = dir.path();
+
+    let run = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(repo_path)
+            .status()
+            .expect("Failed to run git command");
+        assert!(status.success(), "Git command failed: {args:?}");
+    };
+
+    run(&["init"]);
+    run(&["config", "user.name", "Nayan Srivastava"]);
+    run(&["config", "user.email", "nayansrivastav@yahoo.in"]);
+
+    let calc_file = repo_path.join("calc.rs");
+    fs::write(
+        &calc_file,
+        "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n\npub fn multiply(a: i32, b: i32) -> i32 {\n    a * b\n}\n",
+    )
+    .unwrap();
+    run(&["add", "calc.rs"]);
+    run(&["commit", "-m", "feat: implement add and multiply (#50)"]);
+
+    let repo = GitRepo::discover(repo_path).expect("Failed to discover repo");
+    let analyzer = GenesisAnalyzer::new(&repo);
+
+    // 1. Target function by name: calc.rs:multiply
+    let target: Target = "calc.rs:multiply".parse().unwrap();
+    assert_eq!(target.function_name, Some("multiply".to_string()));
+
+    // Analyze with diff requested
+    let dossier = analyzer
+        .analyze_with_options(&target, true)
+        .expect("Analysis failed for function target");
+
+    assert!(dossier.line_range.contains("multiply"));
+    assert!(dossier.genesis_commit.is_some());
+    assert_eq!(dossier.pr_reference, Some("#50".to_string()));
+
+    // Verify genesis_diff is present and contains the patch
+    assert!(dossier.genesis_diff.is_some());
+    let diff = dossier.genesis_diff.unwrap();
+    assert!(diff.contains("pub fn multiply"));
+    assert!(diff.contains('+'));
 }
