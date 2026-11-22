@@ -320,12 +320,12 @@ mod tests {
 
     #[test]
     fn test_parse_glab_config_token_standard() {
-        let sample = r#"
+        let sample = r"
 hosts:
     gitlab.com:
         token: glpat-sample123
         user: testuser
-"#;
+";
         assert_eq!(
             parse_glab_config_token(sample, Some("gitlab.com")),
             Some("glpat-sample123".to_string())
@@ -334,12 +334,12 @@ hosts:
 
     #[test]
     fn test_parse_glab_config_token_with_yaml_null_tag() {
-        let sample = r#"
+        let sample = r"
 hosts:
     gitlab.com:
         token: !!null glpat-ehC--UJGUPvuLKvYFADNKmM6MQpvOjEKdTo3OXI0dQ8
         git_protocol: ssh
-"#;
+";
         assert_eq!(
             parse_glab_config_token(sample, Some("gitlab.com")),
             Some("glpat-ehC--UJGUPvuLKvYFADNKmM6MQpvOjEKdTo3OXI0dQ8".to_string())

@@ -506,7 +506,7 @@ fn test_divergent_branch_merge_provenance_and_author_attribution() {
         assert!(status.success(), "Git command failed: {args:?}");
     };
 
-    run(&["init"]);
+    run(&["init", "-b", "main"]);
     run(&["config", "user.name", "Merge Master"]);
     run(&["config", "user.email", "master@example.com"]);
 
