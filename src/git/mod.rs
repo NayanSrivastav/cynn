@@ -1,1 +1,3 @@
-//! Git repository interface and traversal wrappers
+pub mod repo;
+
+pub use repo::{BlameEntry, CommitInfo, GitRepo};
