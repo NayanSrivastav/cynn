@@ -111,7 +111,7 @@ Within **sub-second time**, `git-lineage` filters out cosmetic noise, traces cod
 
 #### macOS (Homebrew)
 ```bash
-brew install git-lineage
+brew install NayanSrivastav/tap/git-lineage
 ```
 
 #### Linux & macOS (Automated Script)
