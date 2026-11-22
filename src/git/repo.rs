@@ -27,6 +27,35 @@ pub struct BlameEntry {
     pub code: String,
 }
 
+/// Remote platform classification
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PlatformKind {
+    GitHub,
+    GitLab,
+    Bitbucket,
+    Generic,
+}
+
+impl std::fmt::Display for PlatformKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::GitHub => write!(f, "GitHub"),
+            Self::GitLab => write!(f, "GitLab"),
+            Self::Bitbucket => write!(f, "Bitbucket"),
+            Self::Generic => write!(f, "Generic Git"),
+        }
+    }
+}
+
+/// Structured metadata about a remote origin repository
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemoteInfo {
+    pub platform: PlatformKind,
+    pub host: String,
+    pub owner_repo: String,
+    pub raw_url: String,
+}
+
 pub struct GitRepo {
     pub root: PathBuf,
 }
@@ -55,8 +84,8 @@ impl GitRepo {
         })
     }
 
-    /// Extract the remote GitHub owner/repo identifier if origin is configured
-    pub fn get_remote_repo(&self) -> Option<String> {
+    /// Extract structured remote repository information from the origin URL
+    pub fn get_remote_info(&self) -> Option<RemoteInfo> {
         let output = Command::new("git")
             .args(["remote", "get-url", "origin"])
             .current_dir(&self.root)
@@ -68,17 +97,122 @@ impl GitRepo {
         }
 
         let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        // Handle git@github.com:owner/repo.git or https://github.com/owner/repo.git
-        let cleaned = raw
-            .strip_prefix("git@github.com:")
-            .or_else(|| raw.strip_prefix("https://github.com/"))?;
+        Self::parse_remote_url(&raw)
+    }
 
-        let repo = cleaned.trim_end_matches(".git").trim();
-        if repo.is_empty() {
-            None
-        } else {
-            Some(repo.to_string())
+    /// Extract the remote owner/repo identifier if origin is configured
+    pub fn get_remote_repo(&self) -> Option<String> {
+        self.get_remote_info().map(|r| r.owner_repo)
+    }
+
+    /// Parse a remote Git URL into structured platform, host, and owner/repo metadata
+    #[allow(clippy::too_many_lines)]
+    pub fn parse_remote_url(raw: &str) -> Option<RemoteInfo> {
+        if raw.is_empty() {
+            return None;
         }
+
+        let mut cleaned = raw.trim();
+        if let Some(idx) = cleaned.find('?') {
+            cleaned = &cleaned[..idx];
+        }
+        if let Some(idx) = cleaned.find('#') {
+            cleaned = &cleaned[..idx];
+        }
+        let trimmed = cleaned.trim_end_matches(".git");
+
+        let (platform, host, owner_repo) =
+            if let Some(rest) = trimmed.strip_prefix("git@github.com:") {
+                (
+                    PlatformKind::GitHub,
+                    "github.com".to_string(),
+                    clean_owner_repo(PlatformKind::GitHub, rest),
+                )
+            } else if let Some(rest) = trimmed.strip_prefix("https://github.com/") {
+                (
+                    PlatformKind::GitHub,
+                    "github.com".to_string(),
+                    clean_owner_repo(PlatformKind::GitHub, rest),
+                )
+            } else if let Some(rest) = trimmed.strip_prefix("ssh://git@github.com/") {
+                (
+                    PlatformKind::GitHub,
+                    "github.com".to_string(),
+                    clean_owner_repo(PlatformKind::GitHub, rest),
+                )
+            } else if let Some(rest) = trimmed.strip_prefix("git@gitlab.com:") {
+                (
+                    PlatformKind::GitLab,
+                    "gitlab.com".to_string(),
+                    clean_owner_repo(PlatformKind::GitLab, rest),
+                )
+            } else if let Some(rest) = trimmed.strip_prefix("https://gitlab.com/") {
+                (
+                    PlatformKind::GitLab,
+                    "gitlab.com".to_string(),
+                    clean_owner_repo(PlatformKind::GitLab, rest),
+                )
+            } else if let Some(rest) = trimmed.strip_prefix("ssh://git@gitlab.com/") {
+                (
+                    PlatformKind::GitLab,
+                    "gitlab.com".to_string(),
+                    clean_owner_repo(PlatformKind::GitLab, rest),
+                )
+            } else if let Some(rest) = trimmed.strip_prefix("git@bitbucket.org:") {
+                (
+                    PlatformKind::Bitbucket,
+                    "bitbucket.org".to_string(),
+                    clean_owner_repo(PlatformKind::Bitbucket, rest),
+                )
+            } else if let Some(rest) = trimmed.strip_prefix("https://bitbucket.org/") {
+                (
+                    PlatformKind::Bitbucket,
+                    "bitbucket.org".to_string(),
+                    clean_owner_repo(PlatformKind::Bitbucket, rest),
+                )
+            } else if let Some(idx) = trimmed.find("bitbucket.org/") {
+                let rest = &trimmed[idx + "bitbucket.org/".len()..];
+                (
+                    PlatformKind::Bitbucket,
+                    "bitbucket.org".to_string(),
+                    clean_owner_repo(PlatformKind::Bitbucket, rest),
+                )
+            } else if trimmed.contains("gitlab") {
+                let parts: Vec<&str> = trimmed
+                    .split(['/', ':'])
+                    .filter(|s| {
+                        !s.is_empty() && *s != "https" && *s != "http" && *s != "ssh" && *s != "git"
+                    })
+                    .collect();
+                if parts.len() >= 3 {
+                    let host = parts[0].to_string();
+                    let owner_repo = parts[1..].join("/");
+                    (
+                        PlatformKind::GitLab,
+                        host,
+                        clean_owner_repo(PlatformKind::GitLab, &owner_repo),
+                    )
+                } else {
+                    (
+                        PlatformKind::Generic,
+                        "unknown".to_string(),
+                        trimmed.to_string(),
+                    )
+                }
+            } else {
+                (
+                    PlatformKind::Generic,
+                    "generic".to_string(),
+                    trimmed.to_string(),
+                )
+            };
+
+        Some(RemoteInfo {
+            platform,
+            host,
+            owner_repo: owner_repo.trim_matches('/').to_string(),
+            raw_url: raw.trim().to_string(),
+        })
     }
 
     /// Run git blame on a specific line or range with whitespace/noise filtering
@@ -248,5 +382,88 @@ impl GitRepo {
         }
 
         entries
+    }
+}
+
+fn clean_owner_repo(platform: PlatformKind, path: &str) -> String {
+    let without_git = path.trim_end_matches(".git").trim_matches('/');
+    match platform {
+        PlatformKind::GitHub => {
+            let s = without_git.split("/blob/").next().unwrap_or(without_git);
+            s.split("/tree/")
+                .next()
+                .unwrap_or(s)
+                .trim_matches('/')
+                .to_string()
+        }
+        PlatformKind::GitLab => without_git
+            .split("/-/")
+            .next()
+            .unwrap_or(without_git)
+            .trim_matches('/')
+            .to_string(),
+        PlatformKind::Bitbucket => {
+            let s = without_git.split("/src/").next().unwrap_or(without_git);
+            let s = s.split("/commits/").next().unwrap_or(s);
+            s.split("/pull-requests/")
+                .next()
+                .unwrap_or(s)
+                .trim_matches('/')
+                .to_string()
+        }
+        PlatformKind::Generic => without_git.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_remote_url_github() {
+        let ssh =
+            GitRepo::parse_remote_url("git@github.com:NayanSrivastav/git-lineage.git").unwrap();
+        assert_eq!(ssh.platform, PlatformKind::GitHub);
+        assert_eq!(ssh.host, "github.com");
+        assert_eq!(ssh.owner_repo, "NayanSrivastav/git-lineage");
+
+        let https =
+            GitRepo::parse_remote_url("https://github.com/NayanSrivastav/git-lineage").unwrap();
+        assert_eq!(https.platform, PlatformKind::GitHub);
+        assert_eq!(https.owner_repo, "NayanSrivastav/git-lineage");
+    }
+
+    #[test]
+    fn test_parse_remote_url_gitlab() {
+        let web = GitRepo::parse_remote_url("https://gitlab.com/kbutu-group/postgre").unwrap();
+        assert_eq!(web.platform, PlatformKind::GitLab);
+        assert_eq!(web.host, "gitlab.com");
+        assert_eq!(web.owner_repo, "kbutu-group/postgre");
+
+        let web_file = GitRepo::parse_remote_url(
+            "https://gitlab.com/kbutu-group/postgre/-/blob/main/README.md",
+        )
+        .unwrap();
+        assert_eq!(web_file.platform, PlatformKind::GitLab);
+        assert_eq!(web_file.owner_repo, "kbutu-group/postgre");
+
+        let ssh = GitRepo::parse_remote_url("git@gitlab.com:kbutu-group/postgre.git").unwrap();
+        assert_eq!(ssh.platform, PlatformKind::GitLab);
+        assert_eq!(ssh.owner_repo, "kbutu-group/postgre");
+    }
+
+    #[test]
+    fn test_parse_remote_url_bitbucket() {
+        let web_with_query = GitRepo::parse_remote_url(
+            "https://bitbucket.org/fargo3d/public/src/2f230c6334a85fbee3818bdf9ad9b3367c9f778b/?at=release%2Fpublic",
+        )
+        .unwrap();
+        assert_eq!(web_with_query.platform, PlatformKind::Bitbucket);
+        assert_eq!(web_with_query.host, "bitbucket.org");
+        assert_eq!(web_with_query.owner_repo, "fargo3d/public");
+
+        let ssh = GitRepo::parse_remote_url("git@bitbucket.org:fargo3d/public.git").unwrap();
+        assert_eq!(ssh.platform, PlatformKind::Bitbucket);
+        assert_eq!(ssh.owner_repo, "fargo3d/public");
     }
 }

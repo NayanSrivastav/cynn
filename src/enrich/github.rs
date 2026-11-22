@@ -79,6 +79,8 @@ pub fn resolve_pr_for_commit(
         "list",
         "--commit",
         commit_sha,
+        "--state",
+        "all",
         "--json",
         "number,title,url,body",
         "--limit",

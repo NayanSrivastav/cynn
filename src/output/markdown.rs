@@ -14,12 +14,17 @@ pub fn render_markdown(dossier: &LineageDossier) -> String {
     out.push_str("\n```\n\n");
 
     // Multi-Origin Breakdown
-    if dossier.origins.len() > 1 {
+    if dossier.is_multi_origin {
         out.push_str("#### Multi-Origin Breakdown\n");
-        out.push_str("This line range contains code introduced in distinct commits:\n\n");
+        out.push_str("> ⚠️ **Note:** This line range contains code introduced across multiple distinct commits. See the per-slice breakdown below for true line-by-line attribution.\n\n");
         for slice in &dossier.origins {
+            let status = if slice.is_verified {
+                "Verified"
+            } else {
+                "Fallback Blame"
+            };
             out.push_str(&format!(
-                "- **Lines {}-{}**: [`{}`] by {} ({}) — *{}*\n",
+                "- **Lines {}-{}** [{status}]: [`{}`] by {} ({}) — *{}*\n",
                 slice.line_start,
                 slice.line_end,
                 slice.short_sha,
@@ -31,7 +36,12 @@ pub fn render_markdown(dossier: &LineageDossier) -> String {
         out.push('\n');
     }
 
-    out.push_str("#### Genesis (Primary Origin Commit)\n");
+    let genesis_title = if dossier.is_multi_origin {
+        "#### Primary Genesis Commit (Foundational Origin)\n"
+    } else {
+        "#### Genesis (Origin Commit)\n"
+    };
+    out.push_str(genesis_title);
     out.push_str(&format!(
         "- **Commit:** `{}` ({})\n",
         dossier.genesis_commit.short_sha, dossier.genesis_commit.author_date
@@ -41,7 +51,10 @@ pub fn render_markdown(dossier: &LineageDossier) -> String {
         dossier.genesis_commit.author_name, dossier.genesis_commit.author_email
     ));
     if let Some(ref pr) = dossier.pr_details {
-        out.push_str(&format!("- **Pull Request:** [{}]({})\n", pr.title, pr.url));
+        out.push_str(&format!(
+            "- **Pull Request / MR:** [{}]({})\n",
+            pr.title, pr.url
+        ));
         if !pr.linked_issues.is_empty() {
             out.push_str(&format!(
                 "- **Linked Issues:** {}\n",
@@ -55,7 +68,7 @@ pub fn render_markdown(dossier: &LineageDossier) -> String {
             ));
         }
     } else if let Some(ref pr) = dossier.pr_reference {
-        out.push_str(&format!("- **PR Reference:** {pr}\n"));
+        out.push_str(&format!("- **Reference:** {pr}\n"));
     }
     out.push_str(&format!(
         "- **Recorded Intent:** {}\n",
@@ -67,6 +80,10 @@ pub fn render_markdown(dossier: &LineageDossier) -> String {
             dossier.related_tests.join(", ")
         ));
     }
+    out.push_str(&format!(
+        "- **Evidence Citations:** {} verified sources\n",
+        dossier.evidence.len()
+    ));
     out.push_str(&format!(
         "- **Evidence Confidence:** {}\n\n",
         dossier.confidence

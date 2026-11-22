@@ -1,5 +1,5 @@
 use crate::core::target::Target;
-use crate::enrich::{find_related_tests, resolve_pr_for_commit, PrDetails};
+use crate::enrich::{find_related_tests, resolve_remote_context, PrDetails};
 use crate::git::{CommitInfo, GitRepo};
 use serde::{Deserialize, Serialize};
 
@@ -32,7 +32,8 @@ impl std::fmt::Display for Confidence {
 /// Structured evidence piece supporting code provenance and intent claims
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EvidenceItem {
-    pub evidence_type: String,
+    pub category: String, // "historical_rationale", "code_provenance", "companion_test"
+    pub evidence_type: String, // "pull_request_review", "pull_request_body", "commit_message", "test_suite"
     pub source: String,
     pub author: Option<String>,
     pub excerpt: String,
@@ -70,6 +71,7 @@ pub struct LineageDossier {
     pub file_path: String,
     pub line_range: String,
     pub code_snippet: String,
+    pub is_multi_origin: bool,
     pub genesis_commit: CommitInfo,
     pub origins: Vec<OriginSlice>,
     pub pr_reference: Option<String>,
@@ -113,28 +115,31 @@ impl<'a> GenesisAnalyzer<'a> {
 
         // 3. Multi-Origin Dissection: Group contiguous lines by their HEAD commit SHA
         let origin_slices = self.dissect_origins(&target.path, &entries)?;
+        let is_multi_origin = origin_slices.len() > 1;
 
         // 4. Line History Reconstruction: Walk backward across revisions to find true genesis
         let (genesis_commit, milestones) =
             self.trace_provenance(&target.path, start_line, end_line, &origin_slices)?;
 
-        // 5. Context Enrichment: PR details, discussions, and linked issues with explicit repo context
-        let remote_repo = self.repo.get_remote_repo();
+        // 5. Context Enrichment: Multi-platform PR details, discussions, and linked issues
+        let remote_info = self.repo.get_remote_info();
         let mut pr_ref = Self::extract_pr_reference(&genesis_commit.subject, &genesis_commit.body);
         let mut pr_details =
-            resolve_pr_for_commit(&self.repo.root, remote_repo.as_deref(), &genesis_commit.sha);
+            resolve_remote_context(&self.repo.root, remote_info.as_ref(), &genesis_commit);
 
         // If no PR was found on genesis, check if any milestone commit has a linked PR
         if pr_details.is_none() {
             for m in milestones.iter().rev() {
-                if let Some(details) =
-                    resolve_pr_for_commit(&self.repo.root, remote_repo.as_deref(), &m.commit_sha)
-                {
-                    if pr_ref.is_none() {
-                        pr_ref = Some(format!("#{}", details.number));
+                if let Ok(m_commit) = self.repo.get_commit(&m.commit_sha) {
+                    if let Some(details) =
+                        resolve_remote_context(&self.repo.root, remote_info.as_ref(), &m_commit)
+                    {
+                        if pr_ref.is_none() {
+                            pr_ref = Some(format!("#{}", details.number));
+                        }
+                        pr_details = Some(details);
+                        break;
                     }
-                    pr_details = Some(details);
-                    break;
                 }
             }
         }
@@ -164,6 +169,7 @@ impl<'a> GenesisAnalyzer<'a> {
                 format!("{start_line}-{end_line}")
             },
             code_snippet,
+            is_multi_origin,
             genesis_commit,
             origins: origin_slices,
             pr_reference: pr_ref,
@@ -220,7 +226,6 @@ impl<'a> GenesisAnalyzer<'a> {
         end: usize,
         fallback_sha: &str,
     ) -> Result<OriginSlice, String> {
-        // Attempt line evolution trace to locate introducing commit
         let (genesis_commit, is_verified) =
             if let Ok(history) = self.repo.trace_line_evolution(rel_path, start, end, true) {
                 if let Some(commit) = history.into_iter().last() {
@@ -343,12 +348,9 @@ impl<'a> GenesisAnalyzer<'a> {
                     Confidence::High,
                 );
             }
-
-            // Case 3: PR exists but only has a title (low confidence)
-            return (format!("PR #{}: {}", pr.number, pr.title), Confidence::Low);
         }
 
-        // Case 4: Substantive commit body (>20 chars)
+        // Case 3: Substantive commit body (>20 chars)
         if !commit.body.is_empty() {
             let first_para = commit
                 .body
@@ -365,6 +367,11 @@ impl<'a> GenesisAnalyzer<'a> {
             }
         }
 
+        // Case 4: PR title only (low confidence)
+        if let Some(pr) = pr_details {
+            return (format!("PR #{}: {}", pr.number, pr.title), Confidence::Low);
+        }
+
         // Case 5: Commit subject only
         if !commit.subject.is_empty() {
             return (commit.subject.clone(), Confidence::Low);
@@ -377,7 +384,7 @@ impl<'a> GenesisAnalyzer<'a> {
         )
     }
 
-    /// Assemble structured evidence provenance items
+    /// Assemble structured evidence provenance items with clean attribution separation
     fn assemble_evidence(
         commit: &CommitInfo,
         pr_details: Option<&PrDetails>,
@@ -388,6 +395,7 @@ impl<'a> GenesisAnalyzer<'a> {
         if let Some(pr) = pr_details {
             if let Some(ref body) = pr.body_summary {
                 evidence.push(EvidenceItem {
+                    category: "historical_rationale".to_string(),
                     evidence_type: "pull_request_body".to_string(),
                     source: format!("PR #{}", pr.number),
                     author: None,
@@ -395,17 +403,28 @@ impl<'a> GenesisAnalyzer<'a> {
                 });
             }
             for highlight in &pr.reviewer_highlights {
+                let (author, excerpt) = if let Some((auth, rest)) = highlight.split_once(':') {
+                    (
+                        Some(auth.trim().to_string()),
+                        rest.trim().trim_matches('"').to_string(),
+                    )
+                } else {
+                    (None, highlight.clone())
+                };
+
                 evidence.push(EvidenceItem {
+                    category: "historical_rationale".to_string(),
                     evidence_type: "review_discussion".to_string(),
                     source: format!("PR #{}", pr.number),
-                    author: None,
-                    excerpt: highlight.clone(),
+                    author,
+                    excerpt,
                 });
             }
         }
 
         if !commit.body.is_empty() {
             evidence.push(EvidenceItem {
+                category: "code_provenance".to_string(),
                 evidence_type: "commit_message".to_string(),
                 source: format!("commit {}", commit.short_sha),
                 author: Some(commit.author_name.clone()),
@@ -415,10 +434,11 @@ impl<'a> GenesisAnalyzer<'a> {
 
         for test in related_tests {
             evidence.push(EvidenceItem {
-                evidence_type: "companion_test".to_string(),
+                category: "companion_test".to_string(),
+                evidence_type: "test_suite".to_string(),
                 source: test.clone(),
                 author: None,
-                excerpt: "companion test suite".to_string(),
+                excerpt: format!("Candidate companion test file {test}"),
             });
         }
 

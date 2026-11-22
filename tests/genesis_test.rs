@@ -223,3 +223,128 @@ fn test_code_moved_down() {
     );
     assert_eq!(dossier.pr_reference, Some("#10".to_string()));
 }
+
+#[test]
+fn test_merge_commit_provenance() {
+    let dir = tempdir().expect("Failed to create tempdir");
+    let repo_path = dir.path();
+
+    let run = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(repo_path)
+            .status()
+            .expect("Failed to run git command");
+        assert!(status.success(), "Git command failed: {args:?}");
+    };
+
+    run(&["init"]);
+    run(&["config", "user.name", "Nayan Srivastava"]);
+    run(&["config", "user.email", "nayansrivastav@yahoo.in"]);
+
+    // Base commit on main
+    fs::write(repo_path.join("README.md"), "# Test Project\n").unwrap();
+    run(&["add", "README.md"]);
+    run(&["commit", "-m", "chore: initial commit"]);
+
+    // Create feature branch
+    run(&["checkout", "-b", "feature/auth"]);
+    let auth_file = repo_path.join("auth.rs");
+    fs::write(&auth_file, "pub fn verify() -> bool {\n    true\n}\n").unwrap();
+    run(&["add", "auth.rs"]);
+    run(&[
+        "commit",
+        "-m",
+        "feat(auth): implement token verification (#42)\n\nCloses #42 with HMAC validation.",
+    ]);
+
+    // Merge back into main with --no-ff merge commit
+    run(&["checkout", "-b", "main_branch"]);
+    run(&[
+        "merge",
+        "--no-ff",
+        "feature/auth",
+        "-m",
+        "Merge pull request #42 from feature/auth",
+    ]);
+
+    let repo = GitRepo::discover(repo_path).expect("Failed to discover repo");
+    let analyzer = GenesisAnalyzer::new(&repo);
+    let target = Target {
+        path: "auth.rs".into(),
+        start_line: Some(1),
+        end_line: Some(3),
+    };
+    let dossier = analyzer
+        .analyze(&target)
+        .expect("Failed to analyze auth.rs");
+
+    // Must traverse through the merge commit to find the true introducing feature commit
+    assert_eq!(
+        dossier.genesis_commit.subject,
+        "feat(auth): implement token verification (#42)"
+    );
+    assert_eq!(dossier.pr_reference, Some("#42".to_string()));
+}
+
+#[test]
+fn test_multi_platform_gitlab_and_bitbucket_trailers() {
+    let dir = tempdir().expect("Failed to create tempdir");
+    let repo_path = dir.path();
+
+    let run = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(repo_path)
+            .status()
+            .expect("Failed to run git command");
+        assert!(status.success(), "Git command failed: {args:?}");
+    };
+
+    run(&["init"]);
+    run(&["config", "user.name", "Nayan Srivastava"]);
+    run(&["config", "user.email", "nayansrivastav@yahoo.in"]);
+
+    // Configure a simulated GitLab origin
+    run(&[
+        "remote",
+        "add",
+        "origin",
+        "git@gitlab.com:acme-org/analytics-service.git",
+    ]);
+
+    let file_path = repo_path.join("metrics.rs");
+    fs::write(
+        &file_path,
+        "pub fn calculate_latency() -> u64 {\n    42\n}\n",
+    )
+    .unwrap();
+    run(&["add", "metrics.rs"]);
+    run(&[
+        "commit",
+        "-m",
+        "Merge branch 'latency' into 'main'\n\nImplement p99 latency metric calculation\n\nSee merge request !145",
+    ]);
+
+    let repo = GitRepo::discover(repo_path).expect("Failed to discover repo");
+    let remote_info = repo.get_remote_info().expect("Remote info should exist");
+    assert_eq!(remote_info.platform, git_lineage::git::PlatformKind::GitLab);
+    assert_eq!(remote_info.owner_repo, "acme-org/analytics-service");
+
+    let analyzer = GenesisAnalyzer::new(&repo);
+    let target = Target {
+        path: "metrics.rs".into(),
+        start_line: Some(1),
+        end_line: Some(3),
+    };
+    let dossier = analyzer
+        .analyze(&target)
+        .expect("Analysis failed for GitLab repo");
+
+    assert!(dossier.pr_details.is_some());
+    let pr = dossier.pr_details.unwrap();
+    assert_eq!(pr.number, 145);
+    assert!(pr
+        .url
+        .contains("gitlab.com/acme-org/analytics-service/-/merge_requests/145"));
+}

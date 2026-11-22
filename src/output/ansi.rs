@@ -24,7 +24,7 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
     out.push_str(&format!("╰{}\n\n", "─".repeat(60).dimmed()));
 
     // Multi-Origin Dissection (if block spans multiple introducing commits)
-    if dossier.origins.len() > 1 {
+    if dossier.is_multi_origin {
         out.push_str(&format!(
             "🧩 {}\n",
             format!(
@@ -35,11 +35,17 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
             .yellow()
         ));
         for slice in &dossier.origins {
+            let status = if slice.is_verified {
+                "[verified]".green().to_string()
+            } else {
+                "[fallback]".dimmed().to_string()
+            };
             out.push_str(&format!(
-                "   Lines {}-{}: {} by {} ({})\n     \"{}\"\n",
+                "   Lines {}-{}: {} {} by {} ({})\n     \"{}\"\n",
                 slice.line_start,
                 slice.line_end,
                 slice.short_sha.yellow(),
+                status,
                 slice.author.green(),
                 slice.date.dimmed(),
                 slice.summary.dimmed()
@@ -48,8 +54,13 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
         out.push('\n');
     }
 
-    // Genesis Block (Primary introducing commit)
-    out.push_str(&format!("📌 {}\n", "Genesis (Introducing Commit)".bold()));
+    // Genesis Block
+    let genesis_title = if dossier.is_multi_origin {
+        "📌 Primary Genesis Commit (Foundational Origin)"
+    } else {
+        "📌 Genesis (Introducing Commit)"
+    };
+    out.push_str(&format!("{}\n", genesis_title.bold()));
     out.push_str(&format!(
         "   Commit:    {} ({})\n",
         dossier.genesis_commit.short_sha.yellow().bold(),
@@ -62,7 +73,7 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
     ));
 
     if let Some(ref pr) = dossier.pr_reference {
-        out.push_str(&format!("   PR:        {}\n", pr.bright_magenta().bold()));
+        out.push_str(&format!("   Reference: {}\n", pr.bright_magenta().bold()));
     }
 
     out.push_str(&format!(
@@ -105,7 +116,7 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
     }
     if let Some(ref pr) = dossier.pr_details {
         out.push_str(&format!(
-            "   PR URL:        {}\n",
+            "   Context URL:   {}\n",
             pr.url.underline().blue()
         ));
         if !pr.linked_issues.is_empty() {
@@ -121,6 +132,10 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
             ));
         }
     }
+    out.push_str(&format!(
+        "   Evidence Items: {} structured citations\n",
+        dossier.evidence.len()
+    ));
     out.push_str(&format!("   Confidence:    {}\n", dossier.confidence));
 
     out

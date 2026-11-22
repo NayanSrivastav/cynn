@@ -117,6 +117,7 @@ Within **sub-second time**, `git-lineage` traverses parent commits, tracks code 
 | **Surfaces PR rationale & discussions** | ❌ | ❌ | Yes (GUI only) | **Yes (Terminal, Markdown & JSON)** |
 | **Multi-origin block dissection** | ❌ | ❌ | ❌ | **Yes (Isolates multi-commit lines)** |
 | **Locates companion test cases** | ❌ | ❌ | ❌ | **Yes (Heuristic test matcher)** |
+| **Multi-Platform (GitHub, GitLab, Bitbucket)** | ❌ | ❌ | Partial (GitHub/GitLab) | **Yes (GitHub, GitLab, Bitbucket, Generic)** |
 | **Machine-readable for AI agents** | ❌ | ❌ | ❌ | **Yes (`--json` MCP-ready)** |
 | **Runtime footprint** | Built-in | Built-in | Heavy (Node/Electron) | **Single static binary (<8MB)** |
 
@@ -172,17 +173,19 @@ When querying a multi-line range, different lines frequently originate from diff
    Lines 86-90: 904ab12 by Marcus Vance (1 year ago) — "add exponential backoff"
 ```
 
-### 3. Context & Discussion Mining
-Code commits tell you *what* changed; Pull Requests tell you *why*. `git-lineage` queries your local `gh` CLI credentials to surface:
-* PR title and substantive description excerpt.
-* Linked issue references (`fixes #398`, `resolves #412`).
-* Key discussion comments and review constraints from collaborators.
+### 3. Multi-Platform Remote Support (GitHub, GitLab, Bitbucket & Generic Git)
+Code commits record *what* changed; code review platforms record *why*. `git-lineage` inspects your repository's remote origin and enriches the historical dossier using the appropriate platform provider:
+* **GitHub (`github.com`)**: Discovers merged, closed, and active PRs associated with historical commits via `gh pr list --state all`. Surfaces PR descriptions, conversation comments, inline code review thread comments, and linked issues.
+* **GitLab (`gitlab.com` & Self-Hosted)**: Mines GitLab Merge Requests via `glab mr list` and resolves standard GitLab commit trailers (`See merge request !123`).
+* **Bitbucket (`bitbucket.org` & Data Center)**: Resolves Bitbucket Pull Requests and approvals via native merge commit trailers (`Merged in branch (pull request #123)`).
+* **Generic / Air-Gapped Git**: Operates 100% offline without network calls or API credentials by parsing universal commit trailers (`#123`, `!123`, `PR-123`).
 
 ### 4. Zero-Hallucination Confidence Engine
-`git-lineage` strictly separates verifiable **Facts** from **Inferences**:
-* `[High: Explicit]`: Substantive PR description or reviewer constraints verified.
-* `[Medium: Inferred]`: Derived from commit message body and diff patterns.
-* `[Low: None]`: No rationale recorded in commit or PR history. **It never invents reasons.**
+For AI agents and human auditors, distinguishing hard verified historical evidence from heuristic inference is critical. `git-lineage` classifies confidence into a strict hierarchy:
+* **`High`**: Substantive PR description (>20 chars) or collaborator review constraints verified from remote platform discussions.
+* **`Medium`**: Substantive commit description (>20 chars) recorded in the Git history.
+* **`Low`**: Commit subject or PR title only (no extended rationale recorded).
+* **`None`**: No explicit rationale found. **`git-lineage` never hallucinates or invents reasons.**
 
 ---
 
