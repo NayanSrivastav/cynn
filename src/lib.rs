@@ -1,12 +1,11 @@
 //! `git-lineage` library core
 //!
-//! Provides the engine for provenance traversal, noise filtering,
-//! and archaeological context assembly.
+//! High-performance codebase archaeology CLI & agent forensic primitive.
 
 pub mod core;
 pub mod enrich;
 pub mod git;
 pub mod output;
 
-/// Top-level result type for library operations
-pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+pub use core::{GenesisAnalyzer, LineageDossier, Target};
+pub use git::GitRepo;

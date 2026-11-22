@@ -8,8 +8,8 @@
   <strong>Uncover why code was written, how it evolved, and the human decisions behind it—without the noise.</strong>
 </p>
 
-[![CI](https://github.com/your-org/git-lineage/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/git-lineage/actions)
-[![Crates.io](https://img.shields.io/crates/v/git-lineage.svg)](https://crates.io/crates/git-lineage)
+[![CI](https://github.com/NayanSrivastav/git-lineage/actions/workflows/ci.yml/badge.svg)](https://github.com/NayanSrivastav/git-lineage/actions)
+[![Rust](https://img.shields.io/badge/rust-1.78%2B-orange.svg)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
@@ -116,7 +116,7 @@ brew install git-lineage
 
 #### Linux & macOS (Automated Script)
 ```bash
-curl -fsSL https://raw.githubusercontent.com/your-org/git-lineage/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/NayanSrivastav/git-lineage/main/install.sh | sh
 ```
 
 #### From Source (Rust toolchain)
