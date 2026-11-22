@@ -81,7 +81,12 @@ struct GhInlineComment {
     html_url: Option<String>,
 }
 
-/// Distinguish substantive technical rationale from generic conversational approvals
+/// Heuristic filter to distinguish substantive technical review comments from conversational chatter.
+///
+/// NOTE: This is a pragmatic heuristic filter based on minimum length (>25 chars) and common conversational
+/// phrase exclusion ("LGTM", "+1", "thanks", "approved") rather than formal semantic NLP verification.
+/// Long conversational remarks may occasionally pass, while terse technical notes under 25 chars may be
+/// excluded. Used to separate actionable reviewer constraints from noise.
 pub fn is_technical_rationale(body: &str) -> bool {
     let trimmed = body.trim();
     if trimmed.len() < 25 {
@@ -222,67 +227,96 @@ pub fn fetch_github_pr_api(token: &str, owner_repo: &str, commit_sha: &str) -> O
 
     let mut reviewer_highlights = Vec::new();
 
-    // 1. Reviews
-    let reviews_url = format!("https://api.github.com/repos/{owner_repo}/pulls/{number}/reviews");
-    if let Ok(mut rev_res) = ureq::get(&reviews_url)
-        .header("Authorization", &format!("Bearer {token}"))
-        .header("User-Agent", "git-lineage")
-        .header("Accept", "application/vnd.github+json")
-        .call()
-    {
-        if let Ok(revs) = rev_res.body_mut().read_json::<serde_json::Value>() {
-            if let Some(rev_arr) = revs.as_array() {
-                for r in rev_arr {
-                    let r_body = r["body"].as_str().unwrap_or("").trim();
-                    if r_body.len() > 10 {
-                        let author = r["user"]["login"]
-                            .as_str()
-                            .unwrap_or("reviewer")
-                            .to_string();
-                        let state = r["state"].as_str().map(String::from);
-                        let url = r["html_url"].as_str().map(String::from);
-                        reviewer_highlights.push(ReviewHighlight {
-                            author,
-                            body: r_body.to_string(),
-                            review_state: state,
-                            url,
-                            is_technical: is_technical_rationale(r_body),
-                        });
-                    }
-                }
+    // 1. Reviews (paginated up to 3 pages)
+    for page in 1..=3 {
+        let reviews_url = format!(
+            "https://api.github.com/repos/{owner_repo}/pulls/{number}/reviews?per_page=100&page={page}"
+        );
+        let Ok(mut rev_res) = ureq::get(&reviews_url)
+            .header("Authorization", &format!("Bearer {token}"))
+            .header("User-Agent", "git-lineage")
+            .header("Accept", "application/vnd.github+json")
+            .call()
+        else {
+            break;
+        };
+
+        let Ok(reviews_json) = rev_res.body_mut().read_json::<serde_json::Value>() else {
+            break;
+        };
+        let Some(rev_arr) = reviews_json.as_array() else {
+            break;
+        };
+        if rev_arr.is_empty() {
+            break;
+        }
+        let count = rev_arr.len();
+        for r in rev_arr {
+            let r_body = r["body"].as_str().unwrap_or("").trim();
+            if r_body.len() > 10 {
+                let author = r["user"]["login"]
+                    .as_str()
+                    .unwrap_or("reviewer")
+                    .to_string();
+                let state = r["state"].as_str().map(String::from);
+                let url = r["html_url"].as_str().map(String::from);
+                reviewer_highlights.push(ReviewHighlight {
+                    author,
+                    body: r_body.to_string(),
+                    review_state: state,
+                    url,
+                    is_technical: is_technical_rationale(r_body),
+                });
             }
+        }
+        if count < 100 {
+            break;
         }
     }
 
-    // 2. Comments
-    let comments_url =
-        format!("https://api.github.com/repos/{owner_repo}/issues/{number}/comments");
-    if let Ok(mut com_res) = ureq::get(&comments_url)
-        .header("Authorization", &format!("Bearer {token}"))
-        .header("User-Agent", "git-lineage")
-        .header("Accept", "application/vnd.github+json")
-        .call()
-    {
-        if let Ok(coms) = com_res.body_mut().read_json::<serde_json::Value>() {
-            if let Some(com_arr) = coms.as_array() {
-                for c in com_arr {
-                    let c_body = c["body"].as_str().unwrap_or("").trim();
-                    if c_body.len() > 10 {
-                        let author = c["user"]["login"]
-                            .as_str()
-                            .unwrap_or("collaborator")
-                            .to_string();
-                        let url = c["html_url"].as_str().map(String::from);
-                        reviewer_highlights.push(ReviewHighlight {
-                            author,
-                            body: c_body.to_string(),
-                            review_state: Some("COMMENT".to_string()),
-                            url,
-                            is_technical: is_technical_rationale(c_body),
-                        });
-                    }
-                }
+    // 2. Comments (paginated up to 3 pages)
+    for page in 1..=3 {
+        let comments_url = format!(
+            "https://api.github.com/repos/{owner_repo}/issues/{number}/comments?per_page=100&page={page}"
+        );
+        let Ok(mut com_res) = ureq::get(&comments_url)
+            .header("Authorization", &format!("Bearer {token}"))
+            .header("User-Agent", "git-lineage")
+            .header("Accept", "application/vnd.github+json")
+            .call()
+        else {
+            break;
+        };
+
+        let Ok(comments_json) = com_res.body_mut().read_json::<serde_json::Value>() else {
+            break;
+        };
+        let Some(com_arr) = comments_json.as_array() else {
+            break;
+        };
+        if com_arr.is_empty() {
+            break;
+        }
+        let count = com_arr.len();
+        for c in com_arr {
+            let c_body = c["body"].as_str().unwrap_or("").trim();
+            if c_body.len() > 10 {
+                let author = c["user"]["login"]
+                    .as_str()
+                    .unwrap_or("collaborator")
+                    .to_string();
+                let url = c["html_url"].as_str().map(String::from);
+                reviewer_highlights.push(ReviewHighlight {
+                    author,
+                    body: c_body.to_string(),
+                    review_state: Some("COMMENT".to_string()),
+                    url,
+                    is_technical: is_technical_rationale(c_body),
+                });
             }
+        }
+        if count < 100 {
+            break;
         }
     }
 

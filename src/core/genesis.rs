@@ -95,6 +95,8 @@ pub struct LineageDossier {
     pub confidence_docs: String,
     /// Indicates whether line-history reconstruction fell back to unverified HEAD blame commits.
     pub fallback_used: bool,
+    /// Status of remote PR/issue enrichment (`"enriched"`, `"trailer_resolved"`, `"no_matching_pr"`, `"offline"`)
+    pub enrichment_status: String,
     pub evidence: Vec<EvidenceItem>,
     pub related_tests: Vec<String>,
     pub evolution: Vec<EvolutionMilestone>,
@@ -112,6 +114,7 @@ impl<'a> GenesisAnalyzer<'a> {
     }
 
     /// Analyze the target file and line range to assemble the archaeological dossier
+    #[allow(clippy::too_many_lines)]
     pub fn analyze(&self, target: &Target) -> Result<LineageDossier, String> {
         let start_line = target.start_line.unwrap_or(1);
         let end_line = target.end_line.unwrap_or(start_line);
@@ -134,7 +137,17 @@ impl<'a> GenesisAnalyzer<'a> {
 
         // 3. Multi-Origin Dissection: Group contiguous lines by their HEAD commit SHA
         let origin_slices = self.dissect_origins(&target.path, &entries)?;
-        let is_multi_origin = origin_slices.len() > 1;
+
+        // Determine multi-origin status based on DISTINCT resolved introducing commits (genesis_sha),
+        // not merely the count of contiguous blame slices. Multiple slices originating from the
+        // same introducing commit belong to a single logical origin.
+        let mut distinct_genesis_shas: Vec<&str> = origin_slices
+            .iter()
+            .map(|s| s.genesis_sha.as_str())
+            .collect();
+        distinct_genesis_shas.sort_unstable();
+        distinct_genesis_shas.dedup();
+        let is_multi_origin = distinct_genesis_shas.len() > 1;
 
         // 4. Line History Reconstruction: Walk backward across revisions to find true genesis
         let (genesis_commit, milestones, provenance_fallback) =
@@ -144,17 +157,43 @@ impl<'a> GenesisAnalyzer<'a> {
 
         // 5. Context Enrichment & Origin Attribution
         let (final_genesis, intent_summary, confidence, pr_ref, pr_details) = if is_multi_origin {
+            let conf = if fallback_used {
+                Confidence::Low
+            } else {
+                Confidence::Medium
+            };
+            let fallback_note = if fallback_used {
+                "; unverified fallback used for one or more slices"
+            } else {
+                ""
+            };
             let summary = format!(
-                "Multi-origin block ({} distinct introducing commits). Inspect individual origin slices for slice-level genesis and rationale.",
-                origin_slices.len()
+                "Multi-origin block ({} distinct introducing commits across {} slices{}). Inspect individual origin slices for slice-level genesis and rationale.",
+                distinct_genesis_shas.len(),
+                origin_slices.len(),
+                fallback_note
             );
-            (None, summary, Confidence::Medium, None, None)
+            (None, summary, conf, None, None)
         } else {
             let remote_info = self.repo.get_remote_info();
-            let mut pr_ref =
-                Self::extract_pr_reference(&genesis_commit.subject, &genesis_commit.body);
-            let mut pr_details =
-                resolve_remote_context(&self.repo.root, remote_info.as_ref(), &genesis_commit);
+            // If all slices share a single genesis_sha, resolve that authoritative commit
+            let single_genesis_commit = if origin_slices.len() > 1 && !is_multi_origin {
+                self.repo
+                    .get_commit(distinct_genesis_shas[0])
+                    .unwrap_or(genesis_commit)
+            } else {
+                genesis_commit
+            };
+
+            let mut pr_ref = Self::extract_pr_reference(
+                &single_genesis_commit.subject,
+                &single_genesis_commit.body,
+            );
+            let mut pr_details = resolve_remote_context(
+                &self.repo.root,
+                remote_info.as_ref(),
+                &single_genesis_commit,
+            );
 
             if pr_details.is_none() {
                 for m in milestones.iter().rev() {
@@ -179,13 +218,13 @@ impl<'a> GenesisAnalyzer<'a> {
             }
 
             let (intent, conf) = Self::evaluate_intent_and_confidence(
-                &genesis_commit,
+                &single_genesis_commit,
                 pr_details.as_ref(),
                 fallback_used,
             );
 
             (
-                Some(genesis_commit.clone()),
+                Some(single_genesis_commit),
                 intent,
                 conf,
                 pr_ref,
@@ -210,6 +249,16 @@ impl<'a> GenesisAnalyzer<'a> {
             Err(_) => None,
         };
 
+        let enrichment_status = if pr_details.is_some() {
+            "enriched".to_string()
+        } else if pr_ref.is_some() {
+            "trailer_resolved".to_string()
+        } else if self.repo.get_remote_info().is_some() {
+            "no_matching_pr".to_string()
+        } else {
+            "offline".to_string()
+        };
+
         Ok(LineageDossier {
             file_path: target.path.display().to_string(),
             line_range: if start_line == end_line {
@@ -228,6 +277,7 @@ impl<'a> GenesisAnalyzer<'a> {
             confidence_docs: "https://nayansrivastav.github.io/git-lineage/#confidence-tiers"
                 .to_string(),
             fallback_used,
+            enrichment_status,
             evidence,
             related_tests,
             evolution: milestones,

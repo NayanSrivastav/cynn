@@ -200,9 +200,11 @@ For AI agents and human auditors, distinguishing hard verified historical eviden
 | Tier | Deterministic Criteria | Typical Evidence |
 | :--- | :--- | :--- |
 | **`High`** | Substantive PR / MR description (>20 chars) or verified technical reviewer decision. | Pull request description, inline review discussion, or reviewer approval note. |
-| **`Medium`** | Substantive Git commit description (>20 chars) or verified multi-origin composition. | Multi-line commit body or distinct multi-origin slice boundaries. |
-| **`Low`** | PR / MR title or single-line commit subject only. | Single-line commit summary or merge message without extended rationale. |
+| **`Medium`** | Substantive Git commit description (>20 chars) or verified multi-origin composition. | Multi-line commit body or distinct multi-origin slice boundaries (all slices DAG-verified). |
+| **`Low`** | PR / MR title, single-line commit subject only, or unverified DAG fallback. | Single-line commit summary or merge message without extended rationale, or fallback to HEAD blame. |
 | **`None`** | Zero rationale recorded in history. | Bare commits without explanations. **`git-lineage` never hallucinates or invents reasons.** |
+
+> 💡 **Heuristic Noise Filtering:** Technical reviewer comment classification uses a heuristic noise-reduction filter (minimum length & generic phrase suppression like LGTM, +1, thanks) to surface actionable engineering rationale rather than formal semantic verification.
 
 📖 *Learn more in the [Evidence & Confidence Documentation](https://nayansrivastav.github.io/git-lineage/#confidence-tiers).*
 
@@ -223,6 +225,7 @@ git lineage src/billing/stripe_webhook.ts:88 --json
   "file_path": "src/billing/stripe_webhook.ts",
   "line_range": "88",
   "code_snippet": "if (event.id.startsWith(\"evt_test_\") && payload.attempt > 1) { return 200; }",
+  "is_multi_origin": false,
   "genesis_commit": {
     "sha": "e819b2c8d23fa89b21a81234901f4c78129034aa",
     "short_sha": "e819b2c",
@@ -240,7 +243,9 @@ git lineage src/billing/stripe_webhook.ts:88 --json
       "short_sha": "e819b2c",
       "author": "Sarah Chen",
       "date": "2022-04-12 14:22:10",
-      "summary": "feat: handle duplicate sandbox webhook retries from Stripe API v2"
+      "summary": "feat: handle duplicate sandbox webhook retries from Stripe API v2",
+      "history_resolved": true,
+      "fallback_used": false
     }
   ],
   "pr_reference": "#412",
@@ -257,6 +262,8 @@ git lineage src/billing/stripe_webhook.ts:88 --json
   "intent_summary": "Handle duplicate sandbox webhook retries from Stripe API v2: Stripe test-mode webhooks retry up to 5x...",
   "confidence": "High",
   "confidence_docs": "https://nayansrivastav.github.io/git-lineage/#confidence-tiers",
+  "fallback_used": false,
+  "enrichment_status": "enriched",
   "related_tests": ["tests/billing/stripe_webhook.test.ts"],
   "evolution": [
     {

@@ -201,6 +201,9 @@ fn test_evolution_milestones_and_multi_origin_block() {
         0,
         "Multi-origin evolution timeline must have zero aggregate genesis markers"
     );
+    // Verified multi-origin block has Medium confidence
+    assert_eq!(dossier_range.confidence, Confidence::Medium);
+    assert!(!dossier_range.fallback_used);
 }
 
 #[test]
@@ -600,4 +603,85 @@ fn test_divergent_branch_merge_provenance_and_author_attribution() {
     assert_eq!(dossier.pr_reference, Some("#88".to_string()));
     assert!(dossier.origins[0].history_resolved);
     assert!(!dossier.origins[0].fallback_used);
+}
+
+#[test]
+fn test_multiple_slices_resolving_to_same_genesis_commit() {
+    let dir = tempdir().expect("Failed to create tempdir");
+    let repo_path = dir.path();
+
+    let run = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(repo_path)
+            .status()
+            .expect("Failed to run git command");
+        assert!(status.success(), "Git command failed: {args:?}");
+    };
+
+    run(&["init", "-b", "main"]);
+    run(&["config", "user.name", "Original Author"]);
+    run(&["config", "user.email", "author@example.com"]);
+
+    let file_path = repo_path.join("pipeline.rs");
+
+    // Commit 1: Introduce lines 1-5
+    fs::write(
+        &file_path,
+        "line 1: config\nline 2: input\nline 3: transform\nline 4: validate\nline 5: output\n",
+    )
+    .unwrap();
+    run(&["add", "pipeline.rs"]);
+    run(&["commit", "-m", "feat: initial pipeline setup (#10)"]);
+
+    // Commit 2: Modify line 2 only (creates a slice boundary in blame)
+    fs::write(
+        &file_path,
+        "line 1: config\nline 2: input_modified\nline 3: transform\nline 4: validate\nline 5: output\n",
+    )
+    .unwrap();
+    run(&["add", "pipeline.rs"]);
+    run(&["commit", "-m", "fix: adjust input format (#11)"]);
+
+    // Commit 3: Modify line 4 only (creates another slice boundary in blame)
+    fs::write(
+        &file_path,
+        "line 1: config\nline 2: input_modified\nline 3: transform\nline 4: validate_strict\nline 5: output\n",
+    )
+    .unwrap();
+    run(&["add", "pipeline.rs"]);
+    run(&["commit", "-m", "fix: strict validation (#12)"]);
+
+    let repo = GitRepo::discover(repo_path).expect("Failed to discover repo");
+    let analyzer = GenesisAnalyzer::new(&repo);
+
+    // Query entire range lines 1-5: blame has 3 distinct slices, but all lines originally originated from Commit 1
+    let target = Target {
+        path: "pipeline.rs".into(),
+        start_line: Some(1),
+        end_line: Some(5),
+    };
+
+    let dossier = analyzer
+        .analyze(&target)
+        .expect("Analysis failed for pipeline.rs");
+
+    // Must NOT be classified as multi-origin because all slices share the SAME introducing genesis commit!
+    assert!(
+        !dossier.is_multi_origin,
+        "Slices sharing the same introducing commit must not be flagged as multi-origin"
+    );
+    assert!(dossier.genesis_commit.is_some());
+    assert_eq!(
+        dossier.genesis_commit.as_ref().unwrap().subject,
+        "feat: initial pipeline setup (#10)"
+    );
+    // Slices are still preserved for line-level inspection
+    assert!(dossier.origins.len() >= 2);
+    for slice in &dossier.origins {
+        assert_eq!(
+            slice.genesis_sha,
+            dossier.genesis_commit.as_ref().unwrap().sha
+        );
+    }
 }
