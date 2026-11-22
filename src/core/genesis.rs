@@ -1,4 +1,5 @@
 use crate::core::target::Target;
+use crate::enrich::{find_related_tests, resolve_pr_for_commit, PrDetails};
 use crate::git::{CommitInfo, GitRepo};
 use serde::{Deserialize, Serialize};
 
@@ -42,8 +43,10 @@ pub struct LineageDossier {
     pub code_snippet: String,
     pub genesis_commit: CommitInfo,
     pub pr_reference: Option<String>,
+    pub pr_details: Option<PrDetails>,
     pub intent_summary: String,
     pub confidence: Confidence,
+    pub related_tests: Vec<String>,
     pub evolution: Vec<EvolutionMilestone>,
 }
 
@@ -82,10 +85,31 @@ impl<'a> GenesisAnalyzer<'a> {
             .join("\n");
 
         // Parse PR references from subject or body (e.g. #123 or Merge pull request #123)
-        let pr_ref = Self::extract_pr_reference(&commit.subject, &commit.body);
+        let mut pr_ref = Self::extract_pr_reference(&commit.subject, &commit.body);
+
+        // Resolve remote PR details via GitHub CLI if available
+        let pr_details = resolve_pr_for_commit(&commit.sha);
+        if let Some(ref pr) = pr_details {
+            if pr_ref.is_none() {
+                pr_ref = Some(format!("#{}", pr.number));
+            }
+        }
 
         // Determine intent summary and confidence
-        let (intent_summary, confidence) = Self::extract_intent(&commit, pr_ref.is_some());
+        let (mut intent_summary, mut confidence) =
+            Self::extract_intent(&commit, pr_ref.is_some() || pr_details.is_some());
+
+        if let Some(ref pr) = pr_details {
+            confidence = Confidence::Explicit;
+            if let Some(ref summary) = pr.body_summary {
+                intent_summary = format!("{}: {}", pr.title, summary);
+            } else {
+                intent_summary.clone_from(&pr.title);
+            }
+        }
+
+        // Find companion tests
+        let related_tests = find_related_tests(&self.repo.root, &target.path);
 
         // Construct milestones
         let milestones = vec![EvolutionMilestone {
@@ -108,8 +132,10 @@ impl<'a> GenesisAnalyzer<'a> {
             code_snippet,
             genesis_commit: commit,
             pr_reference: pr_ref,
+            pr_details,
             intent_summary,
             confidence,
+            related_tests,
             evolution: milestones,
         })
     }

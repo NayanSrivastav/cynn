@@ -22,13 +22,21 @@ pub fn render_markdown(dossier: &LineageDossier) -> String {
         "- **Author:** {} `<{}>`\n",
         dossier.genesis_commit.author_name, dossier.genesis_commit.author_email
     ));
-    if let Some(ref pr) = dossier.pr_reference {
+    if let Some(ref pr) = dossier.pr_details {
+        out.push_str(&format!("- **Pull Request:** [{}]({})\n", pr.title, pr.url));
+    } else if let Some(ref pr) = dossier.pr_reference {
         out.push_str(&format!("- **PR Reference:** {pr}\n"));
     }
     out.push_str(&format!(
         "- **Recorded Intent:** {}\n",
         dossier.intent_summary
     ));
+    if !dossier.related_tests.is_empty() {
+        out.push_str(&format!(
+            "- **Companion Tests:** {}\n",
+            dossier.related_tests.join(", ")
+        ));
+    }
     out.push_str(&format!(
         "- **Evidence Confidence:** {}\n\n",
         dossier.confidence
