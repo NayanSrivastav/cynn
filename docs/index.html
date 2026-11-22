@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>git-lineage — The Codebase Archaeology CLI & Agent Forensic Primitive</title>
   <meta name="description" content="Uncover why code was written, how it evolved, and the human decisions behind it—without the noise. Built for engineers and AI coding agents.">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="shortcut icon" type="image/x-icon" href="favicon.ico">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -287,6 +289,7 @@
     <div class="container">
       <nav>
         <a href="#" class="logo">
+          <img src="assets/git-lineage-icon.png" alt="git-lineage icon" height="28" style="vertical-align: middle; border-radius: 6px;">
           git-lineage <span class="logo-badge">v0.2.1</span>
         </a>
         <div class="nav-links">
@@ -304,6 +307,9 @@
 
   <main>
     <section class="hero container">
+      <div style="margin-bottom: 24px;">
+        <img src="assets/git-lineage-logo.png" alt="git-lineage logo" width="320" style="filter: drop-shadow(0 10px 25px rgba(56, 189, 248, 0.2));">
+      </div>
       <div class="pill">⚡ The Codebase Archaeology CLI & Agent Forensic Primitive</div>
       <h1>Why was this code written?<br>Stop guessing.</h1>
       <p>Standard <code>git blame</code> stops at formatting and lint commits. <strong>git-lineage</strong> traverses Git history to surface the true introducing commit, PR discussions, and reviewer constraints.</p>

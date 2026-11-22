@@ -2,6 +2,8 @@
 
 <div align="center">
 
+<img src="assets/git-lineage-logo.png" alt="git-lineage logo" width="380" />
+
 <h3>The Codebase Archaeology CLI and Agent Forensic Primitive</h3>
 
 <p>
