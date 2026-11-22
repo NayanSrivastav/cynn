@@ -1,6 +1,6 @@
 [package]
 name = "git-lineage"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Nayan Srivastava <nayansrivastava@example.com>"]
 description = "The Codebase Archaeology CLI and Agent Forensic Primitive."

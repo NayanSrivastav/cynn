@@ -71,7 +71,19 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
 
     // Evidence & Confidence
     out.push_str(&format!("🧪 {}\n", "Evidence & Confidence".bold()));
-    out.push_str(&format!("   Confidence: {}\n", dossier.confidence));
+    if !dossier.related_tests.is_empty() {
+        out.push_str(&format!(
+            "   Related Tests: {}\n",
+            dossier.related_tests.join(", ").cyan()
+        ));
+    }
+    if let Some(ref pr) = dossier.pr_details {
+        out.push_str(&format!(
+            "   PR URL:        {}\n",
+            pr.url.underline().blue()
+        ));
+    }
+    out.push_str(&format!("   Confidence:    {}\n", dossier.confidence));
 
     out
 }
