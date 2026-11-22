@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>git-lineage — The Codebase Archaeology CLI</title>
+  <meta name="description" content="Uncover why code was written, how it evolved, and the human decisions behind it—without the noise.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #111827;
+      --card-border: #1f2937;
+      --text: #f3f4f6;
+      --text-dim: #9ca3af;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.15);
+      --purple: #a855f7;
+      --green: #22c55e;
+      --yellow: #eab308;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'Fira Code', monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+    
+    /* Header */
+    header {
+      padding: 24px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    nav { display: flex; justify-content: space-between; align-items: center; }
+    .logo { font-family: var(--font-mono); font-weight: 700; font-size: 1.25rem; color: #fff; text-decoration: none; display: flex; align-items: center; gap: 8px; }
+    .logo-badge { background: var(--accent); color: #000; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; }
+    .nav-links a { color: var(--text-dim); text-decoration: none; margin-left: 20px; font-size: 0.95rem; transition: color 0.2s; }
+    .nav-links a:hover { color: #fff; }
+    .btn-github {
+      background: #1f2937;
+      border: 1px solid #374151;
+      padding: 8px 16px;
+      border-radius: 8px;
+      color: #fff;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+      transition: background 0.2s;
+    }
+    .btn-github:hover { background: #374151; }
+
+    /* Hero */
+    .hero {
+      padding: 90px 0 60px;
+      text-align: center;
+      position: relative;
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: 20%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 500px;
+      height: 300px;
+      background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+      color: var(--accent);
+      margin-bottom: 24px;
+      font-family: var(--font-mono);
+    }
+    h1 {
+      font-size: 3.5rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      margin-bottom: 20px;
+      background: linear-gradient(180deg, #ffffff 0%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero p {
+      font-size: 1.25rem;
+      color: var(--text-dim);
+      max-width: 650px;
+      margin: 0 auto 36px;
+      font-weight: 400;
+    }
+
+    /* Terminal Demo */
+    .terminal-window {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+      margin: 40px auto 0;
+      text-align: left;
+      font-family: var(--font-mono);
+      overflow: hidden;
+      max-width: 880px;
+    }
+    .terminal-header {
+      background: #161b22;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid #30363d;
+    }
+    .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+    .dot.red { background: #ff5f56; }
+    .dot.yellow { background: #ffbd2e; }
+    .dot.green { background: #27c93f; }
+    .terminal-title { margin-left: 12px; font-size: 0.8rem; color: #8b949e; }
+    .terminal-body {
+      padding: 24px;
+      font-size: 0.9rem;
+      line-height: 1.7;
+      overflow-x: auto;
+    }
+    .prompt { color: #8b949e; }
+    .cmd { color: #58a6ff; font-weight: 600; }
+    .t-cyan { color: #38bdf8; }
+    .t-yellow { color: #facc15; }
+    .t-green { color: #4ade80; }
+    .t-magenta { color: #c084fc; }
+    .t-dim { color: #64748b; }
+    .t-white { color: #f8fafc; }
+
+    /* Quick Install */
+    .install-box {
+      margin: 50px auto 0;
+      max-width: 550px;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      padding: 12px 18px;
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      justify-content: space-between;
+    }
+    .copy-btn {
+      background: transparent;
+      border: 1px solid #30363d;
+      color: #8b949e;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .copy-btn:hover { color: #fff; border-color: #58a6ff; }
+
+    /* Features Grid */
+    .features { padding: 90px 0; border-top: 1px solid rgba(255,255,255,0.05); }
+    .section-title { text-align: center; font-size: 2rem; margin-bottom: 50px; font-weight: 700; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      padding: 32px;
+      border-radius: 12px;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+    .card:hover { border-color: rgba(56, 189, 248, 0.4); transform: translateY(-2px); }
+    .card-icon { font-size: 2rem; margin-bottom: 16px; }
+    .card h3 { font-size: 1.25rem; margin-bottom: 10px; }
+    .card p { color: var(--text-dim); font-size: 0.95rem; line-height: 1.6; }
+
+    /* Comparison Table */
+    .compare-section { padding: 80px 0; background: #0c101d; }
+    .table-container { overflow-x: auto; margin-top: 40px; }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.95rem; }
+    th, td { padding: 16px 20px; border-bottom: 1px solid #1f2937; }
+    th { color: var(--text-dim); font-weight: 600; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 0.05em; }
+    td:first-child { font-weight: 500; }
+    .check { color: var(--green); font-weight: bold; }
+    .cross { color: #ef4444; }
+
+    /* Footer */
+    footer { padding: 40px 0; text-align: center; color: var(--text-dim); font-size: 0.9rem; border-top: 1px solid rgba(255,255,255,0.05); }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="container">
+      <nav>
+        <a href="#" class="logo">
+          git-lineage <span class="logo-badge">v0.2.0</span>
+        </a>
+        <div class="nav-links">
+          <a href="#features">Features</a>
+          <a href="#comparison">Why Not Blame?</a>
+          <a href="#install">Install</a>
+          <a href="https://github.com/NayanSrivastav/git-lineage" class="btn-github">
+            <svg height="18" width="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+            GitHub
+          </a>
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero container">
+      <div class="pill">⚡ The Codebase Archaeology CLI & Agent Forensic Primitive</div>
+      <h1>Why was this code written?<br>Stop guessing.</h1>
+      <p>Standard <code>git blame</code> stops at formatting and lint commits. <strong>git-lineage</strong> traverses Git history to surface the true introducing commit, PR rationale, and human intent.</p>
+
+      <div class="install-box">
+        <code>$ cargo install git-lineage</code>
+        <button class="copy-btn" onclick="navigator.clipboard.writeText('cargo install git-lineage'); this.innerText = 'Copied!'; setTimeout(() => this.innerText = 'Copy', 2000);">Copy</button>
+      </div>
+
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <span class="dot red"></span>
+          <span class="dot yellow"></span>
+          <span class="dot green"></span>
+          <span class="terminal-title">nayan@macbook: ~/projects/payment-service</span>
+        </div>
+        <div class="terminal-body">
+          <p><span class="prompt">$</span> <span class="cmd">git lineage src/billing/stripe_webhook.ts:88</span></p>
+          <br>
+          <p class="t-cyan">╭─ Lineage: src/billing/stripe_webhook.ts:88 ───────────────────────────────────────╮</p>
+          <p class="t-cyan">│ <span class="t-dim">›</span> <span class="t-white">if (event.id.startsWith("evt_test_") && payload.attempt > 1) { return 200; }</span> │</p>
+          <p class="t-cyan">╰───────────────────────────────────────────────────────────────────────────────────╯</p>
+          <br>
+          <p>📌 <strong>Genesis (Introducing Commit)</strong></p>
+          <p>&nbsp;&nbsp;&nbsp;Commit:    <span class="t-yellow">e819b2c</span> <span class="t-dim">(2022-04-12, 2 years ago)</span></p>
+          <p>&nbsp;&nbsp;&nbsp;Author:    <span class="t-green">Sarah Chen</span> <span class="t-dim">&lt;sarah@acme.dev&gt;</span></p>
+          <p>&nbsp;&nbsp;&nbsp;PR:        <span class="t-magenta">#412</span>: "Handle duplicate sandbox webhook retries from Stripe API v2"</p>
+          <p>&nbsp;&nbsp;&nbsp;Intent:    <span class="t-white">"Stripe test-mode webhooks retry up to 5x even on 200 in sandbox when fixtures take >2s."</span></p>
+          <br>
+          <p>📜 <strong>Evolution Timeline</strong></p>
+          <p>&nbsp;&nbsp;&nbsp;<span class="t-yellow">★</span> <span class="t-dim">2022-04-12</span>  <span class="t-yellow">e819b2c</span>  <span class="t-magenta">(#412)</span>  Born: Created in `src/legacy/webhooks.ts` by Sarah Chen</p>
+          <p>&nbsp;&nbsp;&nbsp;<span class="t-cyan">●</span> <span class="t-dim">2023-08-19</span>  <span class="t-yellow">904ab12</span>  <span class="t-magenta">(#904)</span>  Moved: Refactored to `src/billing/stripe_webhook.ts`</p>
+          <p>&nbsp;&nbsp;&nbsp;<span class="t-dim">● 2024-02-10  1420ff3  (#1420) Cosmetic: Prettier format pass (ignored)</span></p>
+          <br>
+          <p>🧪 <strong>Evidence &amp; Confidence</strong></p>
+          <p>&nbsp;&nbsp;&nbsp;Related Tests: <span class="t-cyan">tests/billing/stripe_webhook.test.ts</span></p>
+          <p>&nbsp;&nbsp;&nbsp;PR URL:        <span class="t-cyan">https://github.com/acme/payment/pull/412</span></p>
+          <p>&nbsp;&nbsp;&nbsp;Confidence:    <span class="t-green">High (Explicit PR / issue rationale found)</span></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="features container" id="features">
+      <h2 class="section-title">Built for High-Velocity Engineering</h2>
+      <div class="grid">
+        <div class="card">
+          <div class="card-icon">🎯</div>
+          <h3>True Origin Detection</h3>
+          <p>Automatically filters out whitespace commits, automated lint passes, and renames to isolate the true introducing commit.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">💬</div>
+          <h3>PR &amp; Discussion Context</h3>
+          <p>Resolves commit hashes to Pull Requests, issue discussions, and review comments via your local GitHub/GitLab CLI credentials.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🤖</div>
+          <h3>Agent Forensic Primitive</h3>
+          <p>Exports high-density structured JSON (<code>--json</code>) so AI agents like Claude Code, Cursor, and Devin don't break legacy edge cases.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🧪</div>
+          <h3>Companion Test Matcher</h3>
+          <p>Automatically locates the companion test files covering the legacy code you are investigating.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🔒</div>
+          <h3>100% Local &amp; Private</h3>
+          <p>Operates entirely on your local Git repository. Zero telemetry, zero external cloud dependencies, zero data leaks.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">⚡</div>
+          <h3>Sub-second Speed</h3>
+          <p>Engineered in Rust for instant terminal responses (<300ms) even on repos with over 100,000 commits.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="compare-section" id="comparison">
+      <div class="container">
+        <h2 class="section-title">Why Standard Tools Fall Short</h2>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Capability</th>
+                <th>git blame</th>
+                <th>GitLens</th>
+                <th>git-lineage</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Bypasses formatting &amp; Prettier noise</td>
+                <td class="cross">✕</td>
+                <td class="cross">Partial</td>
+                <td class="check">✓ Automatic</td>
+              </tr>
+              <tr>
+                <td>Follows code across file renames</td>
+                <td class="cross">✕</td>
+                <td class="cross">✕</td>
+                <td class="check">✓ Automatic</td>
+              </tr>
+              <tr>
+                <td>Terminal ANSI &amp; Markdown exports</td>
+                <td class="cross">✕</td>
+                <td class="cross">✕</td>
+                <td class="check">✓ Built-in</td>
+              </tr>
+              <tr>
+                <td>Companion test detection</td>
+                <td class="cross">✕</td>
+                <td class="cross">✕</td>
+                <td class="check">✓ Built-in</td>
+              </tr>
+              <tr>
+                <td>Machine-readable for AI agents</td>
+                <td class="cross">✕</td>
+                <td class="cross">✕</td>
+                <td class="check">✓ JSON / MCP</td>
+              </tr>
+              <tr>
+                <td>Runtime Overhead</td>
+                <td>None</td>
+                <td>Heavy (Electron)</td>
+                <td><strong>None (Single binary)</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Licensed under the MIT License • Built with Rust • <a href="https://github.com/NayanSrivastav/git-lineage" style="color: var(--accent); text-decoration: none;">GitHub Repository</a></p>
+    </div>
+  </footer>
+
+</body>
+</html>
