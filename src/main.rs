@@ -1,5 +1,9 @@
 use clap::Parser;
-use std::path::PathBuf;
+use git_lineage::{
+    output::{render_ansi, render_json, render_markdown},
+    GenesisAnalyzer, GitRepo, Target,
+};
+use std::path::Path;
 
 #[derive(Parser, Debug)]
 #[command(name = "git-lineage")]
@@ -8,7 +12,7 @@ use std::path::PathBuf;
 struct Cli {
     /// Target file and line (e.g., path/to/file.rs:42 or path/to/file.rs:40-60)
     #[arg(value_name = "TARGET")]
-    target: PathBuf,
+    target: String,
 
     /// Output clean GitHub-flavored Markdown
     #[arg(long)]
@@ -30,8 +34,34 @@ struct Cli {
 fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
 
-    println!("git-lineage v{}", env!("CARGO_PKG_VERSION"));
-    println!("Analyzing target: {:?}", args.target);
+    // 1. Parse target
+    let target: Target = args
+        .target
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Invalid target '{e}'"))?;
+
+    // 2. Discover Git repository
+    let repo = GitRepo::discover(Path::new("."))
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    // 3. Analyze genesis provenance
+    let analyzer = GenesisAnalyzer::new(&repo);
+    let dossier = analyzer
+        .analyze(&target)
+        .map_err(|e| anyhow::anyhow!("Analysis failed: {e}"))?;
+
+    // 4. Render output based on flags
+    if args.json {
+        let json_out = render_json(&dossier)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        println!("{json_out}");
+    } else if args.md {
+        let md_out = render_markdown(&dossier);
+        println!("{md_out}");
+    } else {
+        let ansi_out = render_ansi(&dossier);
+        print!("{ansi_out}");
+    }
 
     Ok(())
 }

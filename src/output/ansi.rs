@@ -1,0 +1,77 @@
+use crate::core::LineageDossier;
+use owo_colors::OwoColorize;
+
+/// Render the archaeological dossier in high-contrast ANSI colors for the terminal
+pub fn render_ansi(dossier: &LineageDossier) -> String {
+    let mut out = String::new();
+
+    // Header box
+    out.push_str(&format!(
+        "╭─ Lineage: {}:{} {}\n",
+        dossier.file_path.bold().cyan(),
+        dossier.line_range.bold().yellow(),
+        "─".repeat(40).dimmed()
+    ));
+
+    // Snippet preview
+    for line in dossier.code_snippet.lines().take(5) {
+        out.push_str(&format!("│ {} {}\n", "›".dimmed(), line.italic()));
+    }
+    if dossier.code_snippet.lines().count() > 5 {
+        out.push_str(&format!("│ {} ... (truncated)\n", "›".dimmed()));
+    }
+    out.push_str(&format!("╰{}\n\n", "─".repeat(60).dimmed()));
+
+    // Genesis Block
+    out.push_str(&format!("📌 {}\n", "Genesis (Introducing Commit)".bold()));
+    out.push_str(&format!(
+        "   Commit:    {} ({})\n",
+        dossier.genesis_commit.short_sha.yellow().bold(),
+        dossier.genesis_commit.author_date.dimmed()
+    ));
+    out.push_str(&format!(
+        "   Author:    {} <{}>\n",
+        dossier.genesis_commit.author_name.green(),
+        dossier.genesis_commit.author_email.dimmed()
+    ));
+
+    if let Some(ref pr) = dossier.pr_reference {
+        out.push_str(&format!("   PR:        {}\n", pr.bright_magenta().bold()));
+    }
+
+    out.push_str(&format!(
+        "   Intent:    \"{}\"\n\n",
+        dossier.intent_summary.white()
+    ));
+
+    // Evolution Timeline
+    out.push_str(&format!("📜 {}\n", "Evolution Timeline".bold()));
+    for m in &dossier.evolution {
+        let marker = if m.is_genesis {
+            "★".yellow()
+        } else {
+            "●".blue()
+        };
+        let pr_tag = m
+            .pr_reference
+            .as_deref()
+            .map(|p| format!("({p})"))
+            .unwrap_or_default();
+
+        out.push_str(&format!(
+            "   {} {}  {}  {}\n",
+            marker,
+            m.date.dimmed(),
+            m.short_sha.yellow(),
+            pr_tag.magenta()
+        ));
+        out.push_str(&format!("     {}\n", m.summary));
+    }
+    out.push('\n');
+
+    // Evidence & Confidence
+    out.push_str(&format!("🧪 {}\n", "Evidence & Confidence".bold()));
+    out.push_str(&format!("   Confidence: {}\n", dossier.confidence));
+
+    out
+}
