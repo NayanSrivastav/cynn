@@ -1,6 +1,7 @@
 use crate::core::LineageDossier;
 
 /// Render the archaeological dossier as GitHub-flavored Markdown
+#[allow(clippy::too_many_lines)]
 pub fn render_markdown(dossier: &LineageDossier) -> String {
     let mut out = String::new();
 
@@ -9,16 +10,47 @@ pub fn render_markdown(dossier: &LineageDossier) -> String {
         dossier.file_path, dossier.line_range
     ));
 
-    out.push_str("```\n");
-    out.push_str(&dossier.code_snippet);
-    out.push_str("\n```\n\n");
+    if let Some(ref accordion) = dossier.snippet_accordion {
+        if let Some(ref scope) = accordion.scope {
+            out.push_str(&format!("> **Scope:** `{scope}`\n\n"));
+        }
+
+        out.push_str("```\n");
+        let gutter_width = accordion.max_line_number.to_string().len().max(2);
+        for line in &accordion.lines {
+            if line.is_fold_marker {
+                out.push_str(&format!(
+                    "{:>width$} {} {}\n",
+                    "",
+                    line.marker,
+                    line.content,
+                    width = gutter_width
+                ));
+            } else {
+                out.push_str(&format!(
+                    "{:>width$} {} {}\n",
+                    line.line_number,
+                    line.marker,
+                    line.content,
+                    width = gutter_width
+                ));
+            }
+        }
+        out.push_str("```\n\n");
+    } else {
+        out.push_str("```\n");
+        out.push_str(&dossier.code_snippet);
+        out.push_str("\n```\n\n");
+    }
 
     // Multi-Origin Breakdown
     if dossier.is_multi_origin {
         out.push_str("#### Multi-Origin Breakdown\n");
         out.push_str("> ⚠️ **Note:** This line range contains code introduced across multiple distinct commits. See the per-slice breakdown below for true line-by-line attribution.\n\n");
         for slice in &dossier.origins {
-            let status = if slice.history_resolved {
+            let status = if slice.fallback_used {
+                "Fallback Blame (Unverified)"
+            } else if slice.history_resolved {
                 "Resolved"
             } else {
                 "Fallback Blame"
@@ -37,7 +69,12 @@ pub fn render_markdown(dossier: &LineageDossier) -> String {
     }
 
     if let Some(ref genesis) = dossier.genesis_commit {
-        out.push_str("#### Genesis (Origin Commit)\n");
+        let fallback_note = if dossier.fallback_used {
+            " *(Fallback - Unverified DAG)*"
+        } else {
+            ""
+        };
+        out.push_str(&format!("#### Genesis (Origin Commit){fallback_note}\n"));
         out.push_str(&format!(
             "- **Commit:** `{}` ({})\n",
             genesis.short_sha, genesis.author_date

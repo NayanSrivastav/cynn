@@ -6,22 +6,70 @@ use owo_colors::OwoColorize;
 pub fn render_ansi(dossier: &LineageDossier) -> String {
     let mut out = String::new();
 
-    // Header box
-    out.push_str(&format!(
-        "╭─ Lineage: {}:{} {}\n",
-        dossier.file_path.bold().cyan(),
-        dossier.line_range.bold().yellow(),
-        "─".repeat(40).dimmed()
-    ));
+    // Header box and code preview
+    if let Some(ref accordion) = dossier.snippet_accordion {
+        if let Some(ref scope) = accordion.scope {
+            out.push_str(&format!(
+                "╭─ Lineage: {}:{} ─ [ {} ] {}\n",
+                dossier.file_path.bold().cyan(),
+                dossier.line_range.bold().yellow(),
+                scope.bold().green(),
+                "─".repeat(20).dimmed()
+            ));
+        } else {
+            out.push_str(&format!(
+                "╭─ Lineage: {}:{} {}\n",
+                dossier.file_path.bold().cyan(),
+                dossier.line_range.bold().yellow(),
+                "─".repeat(40).dimmed()
+            ));
+        }
 
-    // Snippet preview
-    for line in dossier.code_snippet.lines().take(5) {
-        out.push_str(&format!("│ {} {}\n", "›".dimmed(), line.italic()));
+        let gutter_width = accordion.max_line_number.to_string().len().max(2);
+        for line in &accordion.lines {
+            if line.is_fold_marker {
+                out.push_str(&format!(
+                    "│ {:>width$} {} {}\n",
+                    "",
+                    line.marker.yellow().dimmed(),
+                    line.content.italic().yellow().dimmed(),
+                    width = gutter_width
+                ));
+            } else if line.is_target {
+                let num_str = format!("{:>width$}", line.line_number, width = gutter_width);
+                out.push_str(&format!(
+                    "│ {} {} {}\n",
+                    num_str.bold().yellow(),
+                    line.marker.bold().yellow(),
+                    line.content.white()
+                ));
+            } else {
+                let num_str = format!("{:>width$}", line.line_number, width = gutter_width);
+                out.push_str(&format!(
+                    "│ {} {} {}\n",
+                    num_str.dimmed(),
+                    line.marker.dimmed(),
+                    line.content.dimmed()
+                ));
+            }
+        }
+        out.push_str(&format!("╰{}\n\n", "─".repeat(60).dimmed()));
+    } else {
+        out.push_str(&format!(
+            "╭─ Lineage: {}:{} {}\n",
+            dossier.file_path.bold().cyan(),
+            dossier.line_range.bold().yellow(),
+            "─".repeat(40).dimmed()
+        ));
+
+        for line in dossier.code_snippet.lines().take(5) {
+            out.push_str(&format!("│ {} {}\n", "›".dimmed(), line.italic()));
+        }
+        if dossier.code_snippet.lines().count() > 5 {
+            out.push_str(&format!("│ {} ... (truncated)\n", "›".dimmed()));
+        }
+        out.push_str(&format!("╰{}\n\n", "─".repeat(60).dimmed()));
     }
-    if dossier.code_snippet.lines().count() > 5 {
-        out.push_str(&format!("│ {} ... (truncated)\n", "›".dimmed()));
-    }
-    out.push_str(&format!("╰{}\n\n", "─".repeat(60).dimmed()));
 
     // Multi-Origin Dissection (if block spans multiple introducing commits)
     if dossier.is_multi_origin {
@@ -35,7 +83,9 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
             .yellow()
         ));
         for slice in &dossier.origins {
-            let status = if slice.history_resolved {
+            let status = if slice.fallback_used {
+                "[unverified-fallback]".red().to_string()
+            } else if slice.history_resolved {
                 "[resolved]".green().to_string()
             } else {
                 "[blame-fallback]".dimmed().to_string()
@@ -56,7 +106,16 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
 
     // Genesis Block
     if let Some(ref genesis) = dossier.genesis_commit {
-        out.push_str(&format!("{}\n", "📌 Genesis (Introducing Commit)".bold()));
+        let fallback_tag = if dossier.fallback_used {
+            format!(" {}", "(Fallback - Unverified DAG)".red())
+        } else {
+            String::new()
+        };
+        out.push_str(&format!(
+            "{}{}\n",
+            "📌 Genesis (Introducing Commit)".bold(),
+            fallback_tag
+        ));
         out.push_str(&format!(
             "   Commit:    {} ({})\n",
             genesis.short_sha.yellow().bold(),

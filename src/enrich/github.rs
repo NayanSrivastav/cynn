@@ -41,6 +41,7 @@ struct GhAuthor {
 #[derive(Deserialize)]
 struct GhComment {
     body: Option<String>,
+    #[serde(alias = "user")]
     author: Option<GhAuthor>,
     url: Option<String>,
 }
@@ -48,6 +49,7 @@ struct GhComment {
 #[derive(Deserialize)]
 struct GhReview {
     body: Option<String>,
+    #[serde(alias = "user")]
     author: Option<GhAuthor>,
     state: Option<String>,
     url: Option<String>,
@@ -572,5 +574,66 @@ github.com:
             parse_gh_hosts_token(sample),
             Some("gho_secrettoken12345".to_string())
         );
+    }
+
+    #[test]
+    fn test_parse_gh_pr_view_merged() {
+        let json_data = r#"{
+            "number": 42,
+            "title": "feat: merged feature PR",
+            "url": "https://github.com/acme/repo/pull/42",
+            "body": "This is a substantive merged PR description explaining the technical rationale.",
+            "author": {"login": "octocat"},
+            "state": "MERGED",
+            "comments": [
+                {
+                    "body": "LGTM",
+                    "author": {"login": "reviewer1"}
+                },
+                {
+                    "body": "Ensure this handles edge case where count is zero.",
+                    "author": {"login": "techlead"},
+                    "url": "https://github.com/acme/repo/pull/42#comment-1"
+                }
+            ],
+            "reviews": [],
+            "closingIssuesReferences": [
+                {"number": 101}
+            ]
+        }"#;
+
+        let view: GhPrViewJson = serde_json::from_str(json_data).unwrap();
+        let pr = build_pr_details(view, vec![], vec![42]);
+
+        assert_eq!(pr.number, 42);
+        assert_eq!(pr.author.as_deref(), Some("octocat"));
+        assert_eq!(pr.linked_issues, vec!["#101"]);
+        assert!(pr.body_summary.is_some());
+        assert_eq!(pr.reviewer_highlights.len(), 1); // "LGTM" filtered out
+        assert_eq!(pr.reviewer_highlights[0].author, "techlead");
+        assert!(pr.reviewer_highlights[0].is_technical);
+    }
+
+    #[test]
+    fn test_parse_gh_pr_list_merged_and_closed() {
+        let json_data = r#"[
+            {
+                "number": 104,
+                "title": "fix: merged hotfix",
+                "url": "https://github.com/acme/repo/pull/104",
+                "body": "Hotfix merged into main."
+            },
+            {
+                "number": 99,
+                "title": "chore: old closed PR",
+                "url": "https://github.com/acme/repo/pull/99",
+                "body": "Closed without merge."
+            }
+        ]"#;
+
+        let prs: Vec<GhPrListJson> = serde_json::from_str(json_data).unwrap();
+        assert_eq!(prs.len(), 2);
+        assert_eq!(prs[0].number, 104);
+        assert_eq!(prs[1].number, 99);
     }
 }

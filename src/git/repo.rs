@@ -248,6 +248,33 @@ impl GitRepo {
         )))
     }
 
+    /// Read lines of a file from the repository worktree, falling back to git show HEAD:<path>
+    pub fn read_file_lines(&self, rel_path: &Path) -> Result<Vec<String>, String> {
+        let abs_path = self.root.join(rel_path);
+        if abs_path.is_file() {
+            if let Ok(content) = std::fs::read_to_string(&abs_path) {
+                return Ok(content.lines().map(String::from).collect());
+            }
+        }
+
+        // Cross-platform normalization: git expects forward slashes
+        let git_path = rel_path.to_string_lossy().replace('\\', "/");
+        let output = Command::new("git")
+            .arg("show")
+            .arg(format!("HEAD:{git_path}"))
+            .current_dir(&self.root)
+            .output()
+            .map_err(|e| format!("Failed to read file from git: {e}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("Could not read file '{git_path}': {stderr}"));
+        }
+
+        let content = String::from_utf8_lossy(&output.stdout);
+        Ok(content.lines().map(String::from).collect())
+    }
+
     /// Retrieve full commit metadata for a specific SHA
     pub fn get_commit(&self, sha: &str) -> Result<CommitInfo, String> {
         // Format: %H%x00%h%x00%an%x00%ae%x00%ad%x00%s%x00%b

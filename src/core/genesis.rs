@@ -1,3 +1,4 @@
+use crate::core::accordion::AccordionSnippet;
 use crate::core::Target;
 use crate::enrich::github::PrDetails;
 use crate::enrich::provider::resolve_remote_context;
@@ -72,6 +73,8 @@ pub struct EvolutionMilestone {
     pub is_genesis: bool,
     /// Indicates whether git line-history reconstruction successfully resolved this historical milestone.
     pub history_resolved: bool,
+    /// Indicates whether line-history reconstruction fell back to the current HEAD blame commit.
+    pub fallback_used: bool,
 }
 
 /// Complete archaeological dossier for a target line or block
@@ -90,9 +93,13 @@ pub struct LineageDossier {
     pub intent_summary: String,
     pub confidence: Confidence,
     pub confidence_docs: String,
+    /// Indicates whether line-history reconstruction fell back to unverified HEAD blame commits.
+    pub fallback_used: bool,
     pub evidence: Vec<EvidenceItem>,
     pub related_tests: Vec<String>,
     pub evolution: Vec<EvolutionMilestone>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snippet_accordion: Option<AccordionSnippet>,
 }
 
 pub struct GenesisAnalyzer<'a> {
@@ -130,8 +137,10 @@ impl<'a> GenesisAnalyzer<'a> {
         let is_multi_origin = origin_slices.len() > 1;
 
         // 4. Line History Reconstruction: Walk backward across revisions to find true genesis
-        let (genesis_commit, milestones) =
+        let (genesis_commit, milestones, provenance_fallback) =
             self.trace_provenance(&target.path, start_line, end_line, &origin_slices)?;
+
+        let fallback_used = provenance_fallback || origin_slices.iter().any(|s| s.fallback_used);
 
         // 5. Context Enrichment & Origin Attribution
         let (final_genesis, intent_summary, confidence, pr_ref, pr_details) = if is_multi_origin {
@@ -169,8 +178,11 @@ impl<'a> GenesisAnalyzer<'a> {
                 }
             }
 
-            let (intent, conf) =
-                Self::evaluate_intent_and_confidence(&genesis_commit, pr_details.as_ref());
+            let (intent, conf) = Self::evaluate_intent_and_confidence(
+                &genesis_commit,
+                pr_details.as_ref(),
+                fallback_used,
+            );
 
             (
                 Some(genesis_commit.clone()),
@@ -190,7 +202,13 @@ impl<'a> GenesisAnalyzer<'a> {
             &origin_slices,
             pr_details.as_ref(),
             &related_tests,
+            fallback_used,
         );
+
+        let snippet_accordion = match self.repo.read_file_lines(&target.path) {
+            Ok(file_lines) => Some(AccordionSnippet::build(&file_lines, start_line, end_line)),
+            Err(_) => None,
+        };
 
         Ok(LineageDossier {
             file_path: target.path.display().to_string(),
@@ -209,9 +227,11 @@ impl<'a> GenesisAnalyzer<'a> {
             confidence,
             confidence_docs: "https://nayansrivastav.github.io/git-lineage/#confidence-tiers"
                 .to_string(),
+            fallback_used,
             evidence,
             related_tests,
             evolution: milestones,
+            snippet_accordion,
         })
     }
 
@@ -300,7 +320,8 @@ impl<'a> GenesisAnalyzer<'a> {
         start_line: usize,
         end_line: usize,
         origin_slices: &[OriginSlice],
-    ) -> Result<(CommitInfo, Vec<EvolutionMilestone>), String> {
+    ) -> Result<(CommitInfo, Vec<EvolutionMilestone>, bool), String> {
+        let is_multi_origin = origin_slices.len() > 1;
         let commits_history = self
             .repo
             .trace_line_evolution(rel_path, start_line, end_line, true)
@@ -313,7 +334,10 @@ impl<'a> GenesisAnalyzer<'a> {
 
                 let mut milestones = Vec::new();
                 for (idx, commit) in history.into_iter().enumerate() {
-                    let is_genesis = idx == total - 1;
+                    // For single-origin blocks, the oldest commit in the lineage is the sole genesis.
+                    // For multi-origin blocks, no single commit in the aggregate timeline is the sole genesis;
+                    // individual origins slices are authoritative.
+                    let is_genesis = !is_multi_origin && (idx == total - 1);
                     let pr_ref = Self::extract_pr_reference(&commit.subject, &commit.body);
 
                     milestones.push(EvolutionMilestone {
@@ -325,10 +349,11 @@ impl<'a> GenesisAnalyzer<'a> {
                         pr_reference: pr_ref,
                         is_genesis,
                         history_resolved: true,
+                        fallback_used: false,
                     });
                 }
 
-                return Ok((genesis, milestones));
+                return Ok((genesis, milestones, false));
             }
         }
 
@@ -344,19 +369,35 @@ impl<'a> GenesisAnalyzer<'a> {
             author: commit.author_name.clone(),
             summary: commit.subject.clone(),
             pr_reference: pr_ref,
-            is_genesis: true,
+            is_genesis: !is_multi_origin,
             history_resolved: primary_slice.history_resolved,
+            fallback_used: true,
         }];
 
-        Ok((commit, milestones))
+        Ok((commit, milestones, true))
     }
 
     /// Strict confidence scoring based on verifiable evidence depth:
     /// High: Substantive PR description (>20 chars) OR substantive reviewer technical decision verified
     /// Medium: Substantive commit description (>20 chars)
-    /// Low: PR title or commit subject only
+    /// Low: PR title or commit subject only, or unverified DAG fallback
     /// None: No rationale recorded
     fn evaluate_intent_and_confidence(
+        commit: &CommitInfo,
+        pr_details: Option<&PrDetails>,
+        fallback_used: bool,
+    ) -> (String, Confidence) {
+        if fallback_used {
+            let (raw_intent, _) = Self::evaluate_intent_and_confidence_inner(commit, pr_details);
+            return (
+                format!("[Unverified DAG: fallback to HEAD blame commit] {raw_intent}"),
+                Confidence::Low,
+            );
+        }
+        Self::evaluate_intent_and_confidence_inner(commit, pr_details)
+    }
+
+    fn evaluate_intent_and_confidence_inner(
         commit: &CommitInfo,
         pr_details: Option<&PrDetails>,
     ) -> (String, Confidence) {
@@ -423,8 +464,20 @@ impl<'a> GenesisAnalyzer<'a> {
         origins: &[OriginSlice],
         pr_details: Option<&PrDetails>,
         related_tests: &[String],
+        fallback_used: bool,
     ) -> Vec<EvidenceItem> {
         let mut evidence = Vec::new();
+
+        if fallback_used {
+            evidence.push(EvidenceItem {
+                category: "code_provenance".to_string(),
+                evidence_type: "unverified_fallback".to_string(),
+                source: "git blame (fallback)".to_string(),
+                author: None,
+                url: None,
+                excerpt: "Line evolution history could not be verified across revisions via log -L; fell back to HEAD blame commit.".to_string(),
+            });
+        }
 
         if let Some(pr) = pr_details {
             if let Some(ref body) = pr.body_summary {

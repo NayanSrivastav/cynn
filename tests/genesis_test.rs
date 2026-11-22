@@ -144,9 +144,28 @@ fn test_evolution_milestones_and_multi_origin_block() {
         dossier2.genesis_commit.as_ref().unwrap().subject,
         "feat: initial engine setup (#1)"
     );
-    assert!(dossier2.evolution.len() >= 2);
+    assert!(
+        dossier2.evolution.len() >= 2,
+        "Evolution timeline must preserve multiple historical milestones"
+    );
     assert_eq!(dossier2.origins.len(), 1);
     assert!(dossier2.origins[0].history_resolved);
+    assert!(
+        !dossier2.fallback_used,
+        "DAG trace should resolve without fallback"
+    );
+
+    // Exactly one genesis marker in single-origin evolution timeline
+    let genesis_markers: Vec<_> = dossier2.evolution.iter().filter(|m| m.is_genesis).collect();
+    assert_eq!(
+        genesis_markers.len(),
+        1,
+        "Single-origin evolution must have exactly one genesis marker"
+    );
+    assert_eq!(
+        genesis_markers[0].summary,
+        "feat: initial engine setup (#1)"
+    );
 
     // Test 2: Query multi-origin range lines 2-3
     let target_range = Target {
@@ -170,6 +189,18 @@ fn test_evolution_milestones_and_multi_origin_block() {
     assert_eq!(dossier_range.origins[1].line_start, 3);
     assert_eq!(dossier_range.origins[1].line_end, 3);
     assert!(dossier_range.origins[1].summary.contains("add max limit"));
+
+    // Multi-origin block must NOT mark any milestone in aggregate timeline as sole genesis
+    let multi_genesis_markers: Vec<_> = dossier_range
+        .evolution
+        .iter()
+        .filter(|m| m.is_genesis)
+        .collect();
+    assert_eq!(
+        multi_genesis_markers.len(),
+        0,
+        "Multi-origin evolution timeline must have zero aggregate genesis markers"
+    );
 }
 
 #[test]
