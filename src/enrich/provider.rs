@@ -119,8 +119,20 @@ fn prompt_interactive_token(platform_name: &str, env_var: &str, repo_name: &str)
         return None;
     }
 
-    eprintln!("💡 Tip: No {platform_name} token or CLI detected for {repo_name}.");
-    eprint!("   Enter {env_var} to enrich PR discussions (or press Enter to proceed offline): ");
+    let cli_cmd = match platform_name {
+        "GitHub" => "gh auth login",
+        "GitLab" => "glab auth login",
+        _ => "",
+    };
+
+    eprintln!("💡 Tip: No {platform_name} authentication found for '{repo_name}'.");
+    eprintln!("   To authenticate automatically in future runs, expose the environment variable:");
+    eprintln!("     export {env_var}=\"<your-personal-access-token>\"");
+    if !cli_cmd.is_empty() {
+        eprintln!("   or authenticate via the official CLI:");
+        eprintln!("     {cli_cmd}");
+    }
+    eprint!("   Enter {env_var} for this session (or press Enter to proceed offline): ");
     let _ = std::io::Write::flush(&mut std::io::stderr());
 
     let mut line = String::new();

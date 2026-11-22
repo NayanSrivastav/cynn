@@ -18,6 +18,11 @@ MULTI-PLATFORM SUPPORT:\n  \
 • GitLab: Merge Request resolution via glab CLI and commit trailers ('See merge request !123').\n  \
 • Bitbucket: Pull Request extraction via merge trailers ('Merged in ... (pull request #123)').\n  \
 • Generic Git: Universal offline commit trailer resolution for air-gapped or self-hosted servers.\n\n\
+AUTHENTICATION & TOKENS:\n  \
+• GitHub: export GITHUB_TOKEN=\"<token>\" (or GH_TOKEN), or log in via 'gh auth login'\n  \
+• GitLab: export GITLAB_TOKEN=\"<token>\" (or GL_TOKEN), or log in via 'glab auth login'\n  \
+• Bitbucket: export BITBUCKET_TOKEN=\"<token>\"\n  \
+• If no token or CLI is configured, git-lineage seamlessly falls back to offline Git trailers.\n\n\
 AGENT FORENSIC ENGINE:\n  \
 • Separates objective historical facts (introducing commit, blame, citations) from inferred intent.\n  \
 • Outputs structured, hallucination-resistant JSON schema for autonomous coding agents.\n  \

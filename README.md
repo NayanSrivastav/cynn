@@ -129,7 +129,8 @@ Within **sub-second time**, `git-lineage` traverses parent commits, tracks code 
 
 #### macOS (Homebrew)
 ```bash
-brew install NayanSrivastav/tap/git-lineage
+brew tap nayansrivastav/tap
+brew install git-lineage
 ```
 
 #### Linux & macOS (Universal Script)
@@ -141,6 +142,19 @@ curl -fsSL https://raw.githubusercontent.com/NayanSrivastav/git-lineage/main/ins
 ```bash
 cargo install git-lineage
 ```
+
+### Authentication & Remote Enrichment
+
+`git-lineage` enriches historical commits with PR/MR titles, descriptions, inline review comments, and linked issues. It supports both **Direct HTTPS REST APIs** (zero CLI binaries required) and **local CLI sessions**:
+
+| Platform | Environment Variable | CLI Fallback |
+| :--- | :--- | :--- |
+| **GitHub** | `export GITHUB_TOKEN="<pat>"` or `GH_TOKEN` | `gh auth login` |
+| **GitLab** | `export GITLAB_TOKEN="<pat>"` or `GL_TOKEN` | `glab auth login` |
+| **Bitbucket** | `export BITBUCKET_TOKEN="<app-password>"` | Offline commit trailers |
+
+* **Zero-Config CLI Detection:** If you are already logged in via `gh` or `glab`, `git-lineage` automatically detects your credentials and config files (`glab-cli/config.yml`) with zero manual setup.
+* **Offline & Air-gapped Fallback:** If no token or CLI is configured, `git-lineage` seamlessly falls back to universal Git commit trailers (`See merge request !123`, `Merged in ... (pull request #42)`) with zero network dependencies.
 
 ### Basic Commands
 
