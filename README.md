@@ -195,11 +195,16 @@ Code commits record *what* changed; code review platforms record *why*. `git-lin
 * **Generic / Air-Gapped Git**: Operates 100% offline without network calls or API credentials by parsing universal commit trailers (`#123`, `!123`, `PR-123`).
 
 ### 4. Zero-Hallucination Confidence Engine
-For AI agents and human auditors, distinguishing hard verified historical evidence from heuristic inference is critical. `git-lineage` classifies confidence into a strict hierarchy:
-* **`High`**: Substantive PR description (>20 chars) or collaborator review constraints verified from remote platform discussions.
-* **`Medium`**: Substantive commit description (>20 chars) recorded in the Git history.
-* **`Low`**: Commit subject or PR title only (no extended rationale recorded).
-* **`None`**: No explicit rationale found. **`git-lineage` never hallucinates or invents reasons.**
+For AI agents and human auditors, distinguishing hard verified historical evidence from heuristic inference is critical. `git-lineage` deterministically classifies confidence into a four-tier verification hierarchy:
+
+| Tier | Deterministic Criteria | Typical Evidence |
+| :--- | :--- | :--- |
+| **`High`** | Substantive PR / MR description (>20 chars) or verified technical reviewer decision. | Pull request description, inline review discussion, or reviewer approval note. |
+| **`Medium`** | Substantive Git commit description (>20 chars) or verified multi-origin composition. | Multi-line commit body or distinct multi-origin slice boundaries. |
+| **`Low`** | PR / MR title or single-line commit subject only. | Single-line commit summary or merge message without extended rationale. |
+| **`None`** | Zero rationale recorded in history. | Bare commits without explanations. **`git-lineage` never hallucinates or invents reasons.** |
+
+📖 *Learn more in the [Evidence & Confidence Documentation](https://nayansrivastav.github.io/git-lineage/#confidence-tiers).*
 
 ---
 
@@ -250,7 +255,8 @@ git lineage src/billing/stripe_webhook.ts:88 --json
     "linked_issues": ["#398"]
   },
   "intent_summary": "Handle duplicate sandbox webhook retries from Stripe API v2: Stripe test-mode webhooks retry up to 5x...",
-  "confidence": "explicit",
+  "confidence": "High",
+  "confidence_docs": "https://nayansrivastav.github.io/git-lineage/#confidence-tiers",
   "related_tests": ["tests/billing/stripe_webhook.test.ts"],
   "evolution": [
     {

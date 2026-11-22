@@ -145,6 +145,10 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
         dossier.evidence.len()
     ));
     out.push_str(&format!("   Confidence:    {}\n", dossier.confidence));
+    out.push_str(&format!(
+        "   Confidence Docs: {}\n",
+        dossier.confidence_docs.underline().blue()
+    ));
 
     out
 }

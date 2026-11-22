@@ -91,8 +91,8 @@ pub fn render_markdown(dossier: &LineageDossier) -> String {
         dossier.evidence.len()
     ));
     out.push_str(&format!(
-        "- **Evidence Confidence:** {}\n\n",
-        dossier.confidence
+        "- **Evidence Confidence:** [{}]({})\n\n",
+        dossier.confidence, dossier.confidence_docs
     ));
 
     out.push_str("#### Evolution Timeline\n");

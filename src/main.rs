@@ -23,6 +23,12 @@ AUTHENTICATION & TOKENS:\n  \
 • GitLab: export GITLAB_TOKEN=\"<token>\" (or GL_TOKEN), or log in via 'glab auth login'\n  \
 • Bitbucket: export BITBUCKET_TOKEN=\"<token>\"\n  \
 • If no token or CLI is configured, git-lineage seamlessly falls back to offline Git trailers.\n\n\
+CONFIDENCE TIERS & VERIFICATION:\n  \
+• High: Substantive PR/MR body (>20 chars) or verified technical reviewer decision.\n  \
+• Medium: Substantive commit description (>20 chars) or verified multi-origin composition.\n  \
+• Low: PR/MR title or single-line commit subject only (no extended rationale recorded).\n  \
+• None: Zero rationale recorded in history (strictly unhallucinated).\n  \
+• Reference: https://nayansrivastav.github.io/git-lineage/#confidence-tiers\n\n\
 AGENT FORENSIC ENGINE:\n  \
 • Separates objective historical facts (introducing commit, blame, citations) from inferred intent.\n  \
 • Outputs structured, hallucination-resistant JSON schema for autonomous coding agents.\n  \

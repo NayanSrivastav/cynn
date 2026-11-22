@@ -89,6 +89,7 @@ pub struct LineageDossier {
     pub pr_details: Option<PrDetails>,
     pub intent_summary: String,
     pub confidence: Confidence,
+    pub confidence_docs: String,
     pub evidence: Vec<EvidenceItem>,
     pub related_tests: Vec<String>,
     pub evolution: Vec<EvolutionMilestone>,
@@ -206,6 +207,8 @@ impl<'a> GenesisAnalyzer<'a> {
             pr_details,
             intent_summary,
             confidence,
+            confidence_docs: "https://nayansrivastav.github.io/git-lineage/#confidence-tiers"
+                .to_string(),
             evidence,
             related_tests,
             evolution: milestones,
