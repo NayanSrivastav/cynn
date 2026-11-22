@@ -122,6 +122,63 @@ impl GitRepo {
         })
     }
 
+    /// Trace the evolutionary history of a line range backward through the Git DAG.
+    /// Returns the commits that touched this range, ordered from most recent to oldest.
+    /// The last commit in this list is the True Genesis Commit where the lines were born.
+    pub fn trace_line_evolution(
+        &self,
+        rel_path: &Path,
+        start_line: usize,
+        end_line: usize,
+        ignore_whitespace: bool,
+    ) -> Result<Vec<CommitInfo>, String> {
+        let mut cmd = Command::new("git");
+        cmd.arg("log")
+            .arg(format!("-L{start_line},{end_line}:{}", rel_path.display()))
+            .arg("-C")
+            .arg("--no-patch")
+            .arg("--format=%H%x00%h%x00%an%x00%ae%x00%ad%x00%s%x00%b%x1f");
+
+        if ignore_whitespace {
+            cmd.arg("-w");
+        }
+
+        cmd.current_dir(&self.root);
+
+        let output = cmd
+            .output()
+            .map_err(|e| format!("Failed to run git log -L: {e}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("git log -L failed: {stderr}"));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut commits = Vec::new();
+
+        for chunk in stdout.split('\x1f') {
+            let trimmed = chunk.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let parts: Vec<&str> = trimmed.split('\0').collect();
+            if parts.len() >= 7 {
+                commits.push(CommitInfo {
+                    sha: parts[0].to_string(),
+                    short_sha: parts[1].to_string(),
+                    author_name: parts[2].to_string(),
+                    author_email: parts[3].to_string(),
+                    author_date: parts[4].to_string(),
+                    subject: parts[5].to_string(),
+                    body: parts[6].trim().to_string(),
+                });
+            }
+        }
+
+        Ok(commits)
+    }
+
     /// Parse output of git blame --line-porcelain
     fn parse_porcelain_blame(content: &str) -> Vec<BlameEntry> {
         let mut entries = Vec::new();

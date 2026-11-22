@@ -21,14 +21,6 @@ struct Cli {
     /// Output structured JSON for AI agents and tooling
     #[arg(long)]
     json: bool,
-
-    /// Run in recursive directory analysis mode
-    #[arg(short, long)]
-    recursive: bool,
-
-    /// Launch interactive terminal explorer (TUI)
-    #[arg(short, long)]
-    interactive: bool,
 }
 
 fn main() -> anyhow::Result<()> {

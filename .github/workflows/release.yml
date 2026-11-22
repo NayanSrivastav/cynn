@@ -56,6 +56,7 @@ jobs:
           BIN_PATH="target/${{ matrix.target }}/release/git-lineage"
           strip "$BIN_PATH" || true
           ARCHIVE_NAME="git-lineage-${{ github.ref_name }}-${{ matrix.target }}.tar.gz"
+          tar -czf "$ARCHIVE_NAME" -C "target/${{ matrix.target }}/release" git-lineage
           if command -v sha256sum >/dev/null 2>&1; then
             sha256sum "$ARCHIVE_NAME" > "${ARCHIVE_NAME}.sha256"
           else

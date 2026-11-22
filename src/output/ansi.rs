@@ -2,6 +2,7 @@ use crate::core::LineageDossier;
 use owo_colors::OwoColorize;
 
 /// Render the archaeological dossier in high-contrast ANSI colors for the terminal
+#[allow(clippy::too_many_lines)]
 pub fn render_ansi(dossier: &LineageDossier) -> String {
     let mut out = String::new();
 
@@ -22,7 +23,32 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
     }
     out.push_str(&format!("╰{}\n\n", "─".repeat(60).dimmed()));
 
-    // Genesis Block
+    // Multi-Origin Dissection (if block spans multiple introducing commits)
+    if dossier.origins.len() > 1 {
+        out.push_str(&format!(
+            "🧩 {}\n",
+            format!(
+                "Multi-Origin Range ({} distinct introducing commits):",
+                dossier.origins.len()
+            )
+            .bold()
+            .yellow()
+        ));
+        for slice in &dossier.origins {
+            out.push_str(&format!(
+                "   Lines {}-{}: {} by {} ({})\n     \"{}\"\n",
+                slice.line_start,
+                slice.line_end,
+                slice.short_sha.yellow(),
+                slice.author.green(),
+                slice.date.dimmed(),
+                slice.summary.dimmed()
+            ));
+        }
+        out.push('\n');
+    }
+
+    // Genesis Block (Primary introducing commit)
     out.push_str(&format!("📌 {}\n", "Genesis (Introducing Commit)".bold()));
     out.push_str(&format!(
         "   Commit:    {} ({})\n",
@@ -82,6 +108,18 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
             "   PR URL:        {}\n",
             pr.url.underline().blue()
         ));
+        if !pr.linked_issues.is_empty() {
+            out.push_str(&format!(
+                "   Linked Issues: {}\n",
+                pr.linked_issues.join(", ").bright_yellow()
+            ));
+        }
+        if !pr.reviewer_highlights.is_empty() {
+            out.push_str(&format!(
+                "   Review Note:   {}\n",
+                pr.reviewer_highlights[0].italic().dimmed()
+            ));
+        }
     }
     out.push_str(&format!("   Confidence:    {}\n", dossier.confidence));
 
