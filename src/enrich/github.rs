@@ -109,17 +109,52 @@ pub fn is_technical_rationale(body: &str) -> bool {
 
 /// Discover GitHub API authentication token from environment or gh CLI credentials
 pub fn resolve_github_token() -> Option<String> {
+    // 1. Environment variables
     if let Ok(token) = std::env::var("GITHUB_TOKEN").or_else(|_| std::env::var("GH_TOKEN")) {
         let t = token.trim();
         if !t.is_empty() {
             return Some(t.to_string());
         }
     }
-    let out = Command::new("gh").args(["auth", "token"]).output().ok()?;
-    if out.status.success() {
-        let t = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if !t.is_empty() {
-            return Some(t);
+
+    // 2. gh CLI credentials command
+    if let Ok(out) = Command::new("gh").args(["auth", "token"]).output() {
+        if out.status.success() {
+            let t = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !t.is_empty() {
+                return Some(t);
+            }
+        }
+    }
+
+    // 3. gh hosts.yml configuration file on disk
+    if let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) {
+        let candidates = [
+            home.join(".config/gh/hosts.yml"),
+            home.join("Library/Application Support/GitHub CLI/hosts.yml"),
+        ];
+
+        for path in &candidates {
+            if let Ok(content) = std::fs::read_to_string(path) {
+                if let Some(tok) = parse_gh_hosts_token(&content) {
+                    return Some(tok);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Parse `oauth_token` from gh hosts.yml content
+pub fn parse_gh_hosts_token(content: &str) -> Option<String> {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("oauth_token:") {
+            let clean = rest.trim().trim_matches(|c| c == '\'' || c == '"');
+            if !clean.is_empty() {
+                return Some(clean.to_string());
+            }
         }
     }
     None
@@ -519,4 +554,23 @@ fn extract_issues_from_text(text: &str) -> Vec<String> {
         }
     }
     issues
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_gh_hosts_token() {
+        let sample = r"
+github.com:
+    user: testuser
+    oauth_token: gho_secrettoken12345
+    git_protocol: ssh
+";
+        assert_eq!(
+            parse_gh_hosts_token(sample),
+            Some("gho_secrettoken12345".to_string())
+        );
+    }
 }

@@ -1,14 +1,56 @@
 use crate::enrich::github::{is_technical_rationale, PrDetails, ReviewHighlight};
 use crate::git::RemoteInfo;
 
-/// Discover Bitbucket API authentication token
-pub fn resolve_bitbucket_token() -> Option<String> {
-    if let Ok(token) = std::env::var("BITBUCKET_TOKEN") {
-        let t = token.trim();
-        if !t.is_empty() {
-            return Some(t.to_string());
+/// RFC 4648 standard base64 encoding helper
+pub fn base64_encode(input: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
+    for chunk in input.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = if chunk.len() > 1 { chunk[1] } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] } else { 0 };
+
+        out.push(TABLE[(b0 >> 2) as usize] as char);
+        out.push(TABLE[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(TABLE[(((b1 & 0x0f) << 2) | (b2 >> 6)) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(TABLE[(b2 & 0x3f) as usize] as char);
+        } else {
+            out.push('=');
         }
     }
+    out
+}
+
+/// Discover Bitbucket API authentication token from environment
+pub fn resolve_bitbucket_token() -> Option<String> {
+    // 1. Direct Bearer token variables
+    for var in &["BITBUCKET_TOKEN", "BITBUCKET_ACCESS_TOKEN", "BB_TOKEN"] {
+        if let Ok(token) = std::env::var(var) {
+            let t = token.trim();
+            if !t.is_empty() {
+                return Some(t.to_string());
+            }
+        }
+    }
+
+    // 2. Bitbucket App Password with Username (Basic Auth)
+    if let Ok(user) = std::env::var("BITBUCKET_USER").or_else(|_| std::env::var("BB_USER")) {
+        if let Ok(pw) =
+            std::env::var("BITBUCKET_APP_PASSWORD").or_else(|_| std::env::var("BITBUCKET_PASSWORD"))
+        {
+            let u = user.trim();
+            let p = pw.trim();
+            if !u.is_empty() && !p.is_empty() {
+                return Some(format!("{u}:{p}"));
+            }
+        }
+    }
+
     None
 }
 
@@ -18,12 +60,20 @@ pub fn fetch_bitbucket_pr_api(
     owner_repo: &str,
     commit_sha: &str,
 ) -> Option<PrDetails> {
+    let auth_header = if token.starts_with("Basic ") || token.starts_with("Bearer ") {
+        token.to_string()
+    } else if token.contains(':') {
+        format!("Basic {}", base64_encode(token.as_bytes()))
+    } else {
+        format!("Bearer {token}")
+    };
+
     let pr_url = format!(
         "https://api.bitbucket.org/2.0/repositories/{owner_repo}/commit/{commit_sha}/pullrequests"
     );
 
     let mut res = ureq::get(&pr_url)
-        .header("Authorization", &format!("Bearer {token}"))
+        .header("Authorization", &auth_header)
         .header("User-Agent", "git-lineage")
         .call()
         .ok()?;
@@ -73,7 +123,7 @@ pub fn fetch_bitbucket_pr_api(
         "https://api.bitbucket.org/2.0/repositories/{owner_repo}/pullrequests/{id}/comments"
     );
     if let Ok(mut com_res) = ureq::get(&comments_url)
-        .header("Authorization", &format!("Bearer {token}"))
+        .header("Authorization", &auth_header)
         .header("User-Agent", "git-lineage")
         .call()
     {
@@ -182,4 +232,21 @@ fn extract_bitbucket_issues(text: &str) -> Vec<String> {
         }
     }
     issues
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_base64_encode() {
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+        assert_eq!(
+            base64_encode(b"user:app-password-123"),
+            "dXNlcjphcHAtcGFzc3dvcmQtMTIz"
+        );
+    }
 }
