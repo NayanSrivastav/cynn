@@ -1,8 +1,8 @@
 [package]
 name = "git-lineage"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
-authors = ["Nayan Srivastava <nayansrivastava@example.com>"]
+authors = ["Nayan Srivastava <nayansrivastav@yahoo.in>"]
 description = "The Codebase Archaeology CLI and Agent Forensic Primitive."
 readme = "README.md"
 license = "MIT"
