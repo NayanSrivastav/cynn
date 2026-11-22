@@ -20,7 +20,7 @@ We are committed to providing a welcoming, inclusive, and harassment-free enviro
 
 ### Clone and Build
 ```bash
-git clone https://github.com/your-org/git-lineage.git
+git clone https://github.com/NayanSrivastav/git-lineage.git
 cd git-lineage
 
 # Build in debug mode
