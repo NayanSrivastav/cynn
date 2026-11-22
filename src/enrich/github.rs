@@ -125,6 +125,15 @@ pub fn resolve_github_token() -> Option<String> {
     None
 }
 
+/// Check if gh CLI is available on PATH
+pub fn is_gh_available() -> bool {
+    Command::new("gh")
+        .arg("--version")
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
 /// Direct HTTPS query to api.github.com for commit PRs (zero CLI binary required)
 #[allow(clippy::too_many_lines)]
 pub fn fetch_github_pr_api(token: &str, owner_repo: &str, commit_sha: &str) -> Option<PrDetails> {

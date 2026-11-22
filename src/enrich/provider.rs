@@ -66,21 +66,47 @@ fn check_or_prompt_token(remote_info: Option<&RemoteInfo>) -> Option<String> {
             if let Some(tok) = crate::enrich::github::resolve_github_token() {
                 return Some(tok);
             }
-            prompt_interactive_token("GitHub", "GITHUB_TOKEN", &info.owner_repo)
+            if crate::enrich::github::is_gh_available() {
+                return None;
+            }
+            get_cached_or_prompt("GitHub", "GITHUB_TOKEN", &info.owner_repo)
         }
         PlatformKind::GitLab => {
-            if let Some(tok) = crate::enrich::gitlab::resolve_gitlab_token() {
+            if let Some(tok) = crate::enrich::gitlab::resolve_gitlab_token(Some(&info.host)) {
                 return Some(tok);
             }
-            prompt_interactive_token("GitLab", "GITLAB_TOKEN", &info.owner_repo)
+            if crate::enrich::gitlab::is_glab_available() {
+                return None;
+            }
+            get_cached_or_prompt("GitLab", "GITLAB_TOKEN", &info.owner_repo)
         }
         PlatformKind::Bitbucket => {
             if let Some(tok) = crate::enrich::bitbucket::resolve_bitbucket_token() {
                 return Some(tok);
             }
-            prompt_interactive_token("Bitbucket", "BITBUCKET_TOKEN", &info.owner_repo)
+            get_cached_or_prompt("Bitbucket", "BITBUCKET_TOKEN", &info.owner_repo)
         }
         PlatformKind::Generic => None,
+    }
+}
+
+fn get_cached_or_prompt(platform: &str, env_var: &str, repo_name: &str) -> Option<String> {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    static SESSION_CACHE: Mutex<Option<HashMap<String, Option<String>>>> = Mutex::new(None);
+
+    let key = format!("{platform}:{repo_name}");
+    if let Ok(mut guard) = SESSION_CACHE.lock() {
+        let map = guard.get_or_insert_with(HashMap::new);
+        if let Some(cached) = map.get(&key) {
+            return cached.clone();
+        }
+        let token = prompt_interactive_token(platform, env_var, repo_name);
+        map.insert(key, token.clone());
+        token
+    } else {
+        prompt_interactive_token(platform, env_var, repo_name)
     }
 }
 

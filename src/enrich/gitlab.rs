@@ -12,15 +12,83 @@ struct GlabMrJson {
     description: Option<String>,
 }
 
-/// Discover GitLab API authentication token
-pub fn resolve_gitlab_token() -> Option<String> {
-    if let Ok(token) = std::env::var("GITLAB_TOKEN") {
+/// Parse token from glab config.yml content
+pub fn parse_glab_config_token(content: &str, target_host: Option<&str>) -> Option<String> {
+    let host_to_match = target_host.unwrap_or("gitlab.com");
+    let mut in_hosts_section = false;
+    let mut in_target_host = false;
+    let mut fallback_token: Option<String> = None;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "hosts:" {
+            in_hosts_section = true;
+            continue;
+        }
+
+        if in_hosts_section {
+            if trimmed.ends_with(':') && !trimmed.starts_with("token:") && !trimmed.starts_with('#')
+            {
+                let host_name = trimmed.trim_end_matches(':').trim();
+                in_target_host = host_name == host_to_match;
+            }
+
+            if let Some(rest) = trimmed.strip_prefix("token:") {
+                let mut val = rest.trim();
+                if let Some(after_null) = val.strip_prefix("!!null") {
+                    val = after_null.trim();
+                }
+                let clean = val.trim_matches(|c| c == '\'' || c == '"').to_string();
+                if !clean.is_empty() && clean != "null" {
+                    if in_target_host {
+                        return Some(clean);
+                    } else if fallback_token.is_none() {
+                        fallback_token = Some(clean);
+                    }
+                }
+            }
+        }
+    }
+
+    fallback_token
+}
+
+/// Discover GitLab API authentication token from environment or glab CLI config.yml
+pub fn resolve_gitlab_token(target_host: Option<&str>) -> Option<String> {
+    // 1. Environment variables
+    if let Ok(token) = std::env::var("GITLAB_TOKEN").or_else(|_| std::env::var("GL_TOKEN")) {
         let t = token.trim();
         if !t.is_empty() {
             return Some(t.to_string());
         }
     }
+
+    // 2. glab CLI config file
+    if let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) {
+        let candidates = [
+            home.join("Library/Application Support/glab-cli/config.yml"),
+            home.join(".config/glab-cli/config.yml"),
+        ];
+
+        for path in &candidates {
+            if let Ok(content) = std::fs::read_to_string(path) {
+                if let Some(tok) = parse_glab_config_token(&content, target_host) {
+                    return Some(tok);
+                }
+            }
+        }
+    }
+
     None
+}
+
+/// Check if glab CLI is available on PATH
+pub fn is_glab_available() -> bool {
+    Command::new("glab")
+        .arg("--version")
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
 }
 
 /// Direct query to GitLab v4 REST API
@@ -135,7 +203,9 @@ pub fn resolve_gitlab_mr(
     let owner_repo = remote_info.map(|r| r.owner_repo.as_str()).unwrap_or("");
 
     // 1. Try Direct API with Token
-    let token = manual_token.map(String::from).or_else(resolve_gitlab_token);
+    let token = manual_token
+        .map(String::from)
+        .or_else(|| resolve_gitlab_token(Some(host)));
     if let Some(tok) = token {
         if !owner_repo.is_empty() {
             if let Some(details) = fetch_gitlab_mr_api(host, &tok, owner_repo, commit_sha) {
@@ -242,4 +312,56 @@ fn extract_gitlab_issues(text: &str) -> Vec<String> {
         }
     }
     issues
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_glab_config_token_standard() {
+        let sample = r#"
+hosts:
+    gitlab.com:
+        token: glpat-sample123
+        user: testuser
+"#;
+        assert_eq!(
+            parse_glab_config_token(sample, Some("gitlab.com")),
+            Some("glpat-sample123".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_glab_config_token_with_yaml_null_tag() {
+        let sample = r#"
+hosts:
+    gitlab.com:
+        token: !!null glpat-ehC--UJGUPvuLKvYFADNKmM6MQpvOjEKdTo3OXI0dQ8
+        git_protocol: ssh
+"#;
+        assert_eq!(
+            parse_glab_config_token(sample, Some("gitlab.com")),
+            Some("glpat-ehC--UJGUPvuLKvYFADNKmM6MQpvOjEKdTo3OXI0dQ8".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_glab_config_token_custom_host() {
+        let sample = r#"
+hosts:
+    gitlab.example.org:
+        token: "glpat-corp999"
+    gitlab.com:
+        token: glpat-com111
+"#;
+        assert_eq!(
+            parse_glab_config_token(sample, Some("gitlab.example.org")),
+            Some("glpat-corp999".to_string())
+        );
+        assert_eq!(
+            parse_glab_config_token(sample, Some("gitlab.com")),
+            Some("glpat-com111".to_string())
+        );
+    }
 }
