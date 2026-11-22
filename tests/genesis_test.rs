@@ -1,5 +1,5 @@
-use git_lineage::core::Target;
 use git_lineage::core::GenesisAnalyzer;
+use git_lineage::core::Target;
 use git_lineage::git::GitRepo;
 use std::fs;
 use std::process::Command;
@@ -17,7 +17,7 @@ fn test_genesis_analyzer_on_fixture_repo() {
             .current_dir(repo_path)
             .status()
             .expect("Failed to run git command");
-        assert!(status.success(), "Git command failed: {:?}", args);
+        assert!(status.success(), "Git command failed: {args:?}");
     };
 
     run(&["init"]);

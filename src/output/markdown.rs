@@ -29,7 +29,10 @@ pub fn render_markdown(dossier: &LineageDossier) -> String {
         "- **Recorded Intent:** {}\n",
         dossier.intent_summary
     ));
-    out.push_str(&format!("- **Evidence Confidence:** {}\n\n", dossier.confidence));
+    out.push_str(&format!(
+        "- **Evidence Confidence:** {}\n\n",
+        dossier.confidence
+    ));
 
     out.push_str("#### Evolution Timeline\n");
     for m in &dossier.evolution {

@@ -13,17 +13,10 @@ categories = ["command-line-utilities", "development-tools"]
 # CLI Parsing
 clap = { version = "4.5", features = ["derive", "cargo"] }
 
-# Git Traversal Engine
-git2 = { version = "0.19", default-features = false }
-
-# Terminal UI & Styling
+# Terminal Styling
 owo-colors = "4.0"
-comfy-table = "7.1"
-crossterm = "0.28"
-ratatui = { version = "0.28", optional = true }
 
 # Error Handling
-thiserror = "1.0"
 anyhow = "1.0"
 
 # Serialization (JSON & Agent Output)
@@ -35,9 +28,7 @@ tempfile = "3.12"
 assert_cmd = "2.0"
 predicates = "3.1"
 
-[features]
-default = []
-tui = ["dep:ratatui"]
+
 
 [lints.rust]
 unsafe_code = "forbid"
@@ -46,3 +37,7 @@ unsafe_code = "forbid"
 pedantic = { level = "warn", priority = -1 }
 must_use_candidate = "allow"
 module_name_repetitions = "allow"
+format_push_string = "allow"
+missing_errors_doc = "allow"
+map_unwrap_or = "allow"
+struct_excessive_bools = "allow"
