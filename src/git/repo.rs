@@ -1,8 +1,9 @@
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Commit metadata extracted from git history
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommitInfo {
     pub sha: String,
     pub short_sha: String,
@@ -82,7 +83,9 @@ impl GitRepo {
             return Err(format!("git blame failed: {stderr}"));
         }
 
-        Self::parse_porcelain_blame(&String::from_utf8_lossy(&output.stdout))
+        Ok(Self::parse_porcelain_blame(&String::from_utf8_lossy(
+            &output.stdout,
+        )))
     }
 
     /// Retrieve full commit metadata for a specific SHA
@@ -120,7 +123,7 @@ impl GitRepo {
     }
 
     /// Parse output of git blame --line-porcelain
-    fn parse_porcelain_blame(content: &str) -> Result<Vec<BlameEntry>, String> {
+    fn parse_porcelain_blame(content: &str) -> Vec<BlameEntry> {
         let mut entries = Vec::new();
         let mut current_sha = String::new();
         let mut orig_line = 0;
@@ -161,6 +164,6 @@ impl GitRepo {
             }
         }
 
-        Ok(entries)
+        entries
     }
 }

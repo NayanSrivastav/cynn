@@ -41,8 +41,7 @@ fn main() -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("Invalid target '{e}'"))?;
 
     // 2. Discover Git repository
-    let repo = GitRepo::discover(Path::new("."))
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let repo = GitRepo::discover(Path::new(".")).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     // 3. Analyze genesis provenance
     let analyzer = GenesisAnalyzer::new(&repo);
@@ -52,8 +51,7 @@ fn main() -> anyhow::Result<()> {
 
     // 4. Render output based on flags
     if args.json {
-        let json_out = render_json(&dossier)
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let json_out = render_json(&dossier).map_err(|e| anyhow::anyhow!("{e}"))?;
         println!("{json_out}");
     } else if args.md {
         let md_out = render_markdown(&dossier);

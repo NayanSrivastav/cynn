@@ -48,9 +48,9 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
     out.push_str(&format!("📜 {}\n", "Evolution Timeline".bold()));
     for m in &dossier.evolution {
         let marker = if m.is_genesis {
-            "★".yellow()
+            "★".yellow().to_string()
         } else {
-            "●".blue()
+            "●".blue().to_string()
         };
         let pr_tag = m
             .pr_reference

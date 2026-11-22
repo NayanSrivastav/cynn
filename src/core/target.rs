@@ -54,7 +54,9 @@ impl FromStr for Target {
                     return Err("Line numbers must be 1-indexed (>= 1)".to_string());
                 }
                 if start > end {
-                    return Err(format!("Start line ({start}) cannot exceed end line ({end})"));
+                    return Err(format!(
+                        "Start line ({start}) cannot exceed end line ({end})"
+                    ));
                 }
 
                 Ok(Self {

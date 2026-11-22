@@ -62,7 +62,9 @@ impl<'a> GenesisAnalyzer<'a> {
         let end_line = target.end_line.unwrap_or(start_line);
 
         // Blame lines with whitespace filtering (-w)
-        let entries = self.repo.blame_lines(&target.path, start_line, end_line, true)?;
+        let entries = self
+            .repo
+            .blame_lines(&target.path, start_line, end_line, true)?;
 
         if entries.is_empty() {
             return Err("No blame information available for specified lines".to_string());
