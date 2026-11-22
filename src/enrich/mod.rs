@@ -1,6 +1,7 @@
 pub mod bitbucket;
 pub mod github;
 pub mod gitlab;
+pub mod match_pr;
 pub mod provider;
 pub mod test_match;
 

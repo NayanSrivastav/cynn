@@ -45,8 +45,23 @@ pub fn render_markdown(dossier: &LineageDossier) -> String {
 
     // Multi-Origin Breakdown
     if dossier.is_multi_origin {
+        let distinct_count = dossier
+            .origins
+            .iter()
+            .map(|s| &s.genesis_sha)
+            .collect::<std::collections::HashSet<_>>()
+            .len();
+
+        let commit_str = if distinct_count == 1 {
+            "1 distinct commit".to_string()
+        } else {
+            format!("{distinct_count} distinct commits")
+        };
+
         out.push_str("#### Multi-Origin Breakdown\n");
-        out.push_str("> ⚠️ **Note:** This line range contains code introduced across multiple distinct commits. See the per-slice breakdown below for true line-by-line attribution.\n\n");
+        out.push_str(&format!(
+            "> ⚠️ **Note:** This line range contains code introduced across {commit_str}. See the per-slice breakdown below for true line-by-line attribution.\n\n"
+        ));
         for slice in &dossier.origins {
             let status = if slice.fallback_used {
                 "Fallback Blame (Unverified)"
@@ -55,8 +70,19 @@ pub fn render_markdown(dossier: &LineageDossier) -> String {
             } else {
                 "Fallback Blame"
             };
+            let mut blame_note = String::new();
+            if !slice.blame_commits.is_empty()
+                && (slice.blame_commits.len() > 1 || slice.blame_commits[0] != slice.genesis_sha)
+            {
+                let short_blames: Vec<&str> = slice
+                    .blame_commits
+                    .iter()
+                    .map(|sha| if sha.len() >= 7 { &sha[..7] } else { sha })
+                    .collect();
+                blame_note = format!(" *(HEAD blame: `{}`)*", short_blames.join("`, `"));
+            }
             out.push_str(&format!(
-                "- **Lines {}-{}** [{status}]: [`{}`] by {} ({}) — *{}*\n",
+                "- **Lines {}-{}** [{status}]: [`{}`]{blame_note} by {} ({}) — *{}*\n",
                 slice.line_start,
                 slice.line_end,
                 slice.short_sha,
@@ -106,10 +132,20 @@ pub fn render_markdown(dossier: &LineageDossier) -> String {
             out.push_str(&format!("- **Reference:** {pr}\n"));
         }
     } else {
+        let distinct_count = dossier
+            .origins
+            .iter()
+            .map(|s| &s.genesis_sha)
+            .collect::<std::collections::HashSet<_>>()
+            .len();
+        let commit_str = if distinct_count == 1 {
+            "1 distinct commit".to_string()
+        } else {
+            format!("{distinct_count} distinct commits")
+        };
         out.push_str("#### Multi-Origin Range\n");
         out.push_str(&format!(
-            "This code range was introduced across **{} distinct commits**. See the Multi-Origin Breakdown above for per-slice provenance.\n",
-            dossier.origins.len()
+            "This code range was introduced across **{commit_str}**. See the Multi-Origin Breakdown above for per-slice provenance.\n"
         ));
     }
 

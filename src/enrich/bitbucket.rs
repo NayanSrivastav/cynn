@@ -1,4 +1,5 @@
 use crate::enrich::github::{is_technical_rationale, PrDetails, ReviewHighlight};
+use crate::enrich::match_pr::{select_best_pr_candidate, RemotePrCandidate};
 use crate::git::RemoteInfo;
 
 /// RFC 4648 standard base64 encoding helper
@@ -55,10 +56,13 @@ pub fn resolve_bitbucket_token() -> Option<String> {
 }
 
 /// Direct query to Bitbucket Cloud REST API v2.0
+#[allow(clippy::too_many_lines)]
 pub fn fetch_bitbucket_pr_api(
     token: &str,
     owner_repo: &str,
     commit_sha: &str,
+    commit_subject: &str,
+    commit_body: &str,
 ) -> Option<PrDetails> {
     let auth_header = if token.starts_with("Basic ") || token.starts_with("Bearer ") {
         token.to_string()
@@ -84,18 +88,40 @@ pub fn fetch_bitbucket_pr_api(
         return None;
     }
 
-    let first = &arr[0];
-    let id = first["id"].as_u64()?;
-    let title = first["title"].as_str().unwrap_or("").to_string();
-    let url = first["links"]["html"]["href"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
-    let author = first["author"]["nickname"]
-        .as_str()
-        .or_else(|| first["author"]["display_name"].as_str())
-        .map(String::from);
-    let raw_desc = first["summary"]["raw"].as_str().map(String::from);
+    let candidates: Vec<RemotePrCandidate> = arr
+        .iter()
+        .filter_map(|p| {
+            let id = p["id"].as_u64()?;
+            let title = p["title"].as_str().unwrap_or("").to_string();
+            let url = p["links"]["html"]["href"]
+                .as_str()
+                .unwrap_or("")
+                .to_string();
+            let author = p["author"]["nickname"]
+                .as_str()
+                .or_else(|| p["author"]["display_name"].as_str())
+                .map(String::from);
+            let description = p["summary"]["raw"].as_str().map(String::from);
+            let source_branch = p["source"]["branch"]["name"].as_str().map(String::from);
+            Some(RemotePrCandidate {
+                id,
+                title,
+                description,
+                source_branch,
+                url,
+                author,
+            })
+        })
+        .collect();
+
+    let all_matched_prs: Vec<u64> = candidates.iter().map(|c| c.id).collect();
+    let best = select_best_pr_candidate(&candidates, commit_subject, commit_body)?;
+
+    let id = best.id;
+    let title = best.title.clone();
+    let url = best.url.clone();
+    let author = best.author.clone();
+    let raw_desc = best.description.clone();
 
     let body_summary = raw_desc.as_ref().and_then(|d| {
         let trimmed = d.trim();
@@ -157,7 +183,7 @@ pub fn fetch_bitbucket_pr_api(
         body_summary,
         reviewer_highlights,
         linked_issues,
-        all_matched_prs: vec![id],
+        all_matched_prs,
     })
 }
 
@@ -178,7 +204,9 @@ pub fn resolve_bitbucket_pr(
         .or_else(resolve_bitbucket_token);
     if let Some(tok) = token {
         if !owner_repo.is_empty() {
-            if let Some(details) = fetch_bitbucket_pr_api(&tok, owner_repo, commit_sha) {
+            if let Some(details) =
+                fetch_bitbucket_pr_api(&tok, owner_repo, commit_sha, commit_subject, commit_body)
+            {
                 return Some(details);
             }
         }

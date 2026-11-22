@@ -1,3 +1,4 @@
+use crate::enrich::match_pr::{select_best_pr_candidate, RemotePrCandidate};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::process::Command;
@@ -31,6 +32,8 @@ struct GhPrListJson {
     url: String,
     body: Option<String>,
     author: Option<GhAuthor>,
+    #[serde(rename = "headRefName")]
+    head_ref_name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -178,7 +181,13 @@ pub fn is_gh_available() -> bool {
 
 /// Direct HTTPS query to api.github.com for commit PRs (zero CLI binary required)
 #[allow(clippy::too_many_lines)]
-pub fn fetch_github_pr_api(token: &str, owner_repo: &str, commit_sha: &str) -> Option<PrDetails> {
+pub fn fetch_github_pr_api(
+    token: &str,
+    owner_repo: &str,
+    commit_sha: &str,
+    commit_subject: &str,
+    commit_body: &str,
+) -> Option<PrDetails> {
     let list_url = format!("https://api.github.com/repos/{owner_repo}/commits/{commit_sha}/pulls");
     let mut res = ureq::get(&list_url)
         .header("Authorization", &format!("Bearer {token}"))
@@ -193,13 +202,34 @@ pub fn fetch_github_pr_api(token: &str, owner_repo: &str, commit_sha: &str) -> O
         return None;
     }
 
-    let all_matched_prs: Vec<u64> = arr.iter().filter_map(|p| p["number"].as_u64()).collect();
-    let first = &arr[0];
-    let number = first["number"].as_u64()?;
-    let title = first["title"].as_str().unwrap_or("").to_string();
-    let pr_url = first["html_url"].as_str().unwrap_or("").to_string();
-    let author = first["user"]["login"].as_str().map(String::from);
-    let body = first["body"].as_str().map(String::from);
+    let candidates: Vec<RemotePrCandidate> = arr
+        .iter()
+        .filter_map(|p| {
+            let number = p["number"].as_u64()?;
+            let title = p["title"].as_str().unwrap_or("").to_string();
+            let pr_url = p["html_url"].as_str().unwrap_or("").to_string();
+            let author = p["user"]["login"].as_str().map(String::from);
+            let body = p["body"].as_str().map(String::from);
+            let source_branch = p["head"]["ref"].as_str().map(String::from);
+            Some(RemotePrCandidate {
+                id: number,
+                title,
+                description: body,
+                source_branch,
+                url: pr_url,
+                author,
+            })
+        })
+        .collect();
+
+    let all_matched_prs: Vec<u64> = candidates.iter().map(|c| c.id).collect();
+    let best = select_best_pr_candidate(&candidates, commit_subject, commit_body)?;
+
+    let number = best.id;
+    let title = best.title.clone();
+    let pr_url = best.url.clone();
+    let author = best.author.clone();
+    let body = best.description.clone();
 
     let body_summary = body.as_ref().and_then(|b| {
         let trimmed = b.trim();
@@ -338,24 +368,36 @@ pub fn resolve_pr_for_commit(
     repo_root: &Path,
     remote_repo: Option<&str>,
     commit_sha: &str,
+    commit_subject: &str,
+    commit_body: &str,
     manual_token: Option<&str>,
 ) -> Option<PrDetails> {
     // 1. Try Direct API with Token if owner_repo is identified
     let token = manual_token.map(String::from).or_else(resolve_github_token);
     if let (Some(tok), Some(repo)) = (&token, remote_repo) {
-        if let Some(details) = fetch_github_pr_api(tok, repo, commit_sha) {
+        if let Some(details) =
+            fetch_github_pr_api(tok, repo, commit_sha, commit_subject, commit_body)
+        {
             return Some(details);
         }
     }
 
     // 2. Fallback to local gh CLI if present
-    resolve_pr_via_gh_cli(repo_root, remote_repo, commit_sha)
+    resolve_pr_via_gh_cli(
+        repo_root,
+        remote_repo,
+        commit_sha,
+        commit_subject,
+        commit_body,
+    )
 }
 
 fn resolve_pr_via_gh_cli(
     repo_root: &Path,
     remote_repo: Option<&str>,
     commit_sha: &str,
+    commit_subject: &str,
+    commit_body: &str,
 ) -> Option<PrDetails> {
     let mut list_cmd = Command::new("gh");
     list_cmd.args([
@@ -366,9 +408,9 @@ fn resolve_pr_via_gh_cli(
         "--state",
         "all",
         "--json",
-        "number,title,url,body",
+        "number,title,url,body,headRefName",
         "--limit",
-        "5",
+        "10",
     ]);
     list_cmd.current_dir(repo_root);
     if let Some(repo) = remote_repo {
@@ -385,15 +427,27 @@ fn resolve_pr_via_gh_cli(
         return None;
     }
 
-    let all_matched_prs: Vec<u64> = prs.iter().map(|p| p.number).collect();
-    let matched_pr = &prs[0];
+    let candidates: Vec<RemotePrCandidate> = prs
+        .iter()
+        .map(|p| RemotePrCandidate {
+            id: p.number,
+            title: p.title.clone(),
+            description: p.body.clone(),
+            source_branch: p.head_ref_name.clone(),
+            url: p.url.clone(),
+            author: p.author.as_ref().and_then(|a| a.login.clone()),
+        })
+        .collect();
+
+    let all_matched_prs: Vec<u64> = candidates.iter().map(|c| c.id).collect();
+    let matched_pr = select_best_pr_candidate(&candidates, commit_subject, commit_body)?;
 
     // Detailed PR view with discussions, reviews, and closing issues
     let mut view_cmd = Command::new("gh");
     view_cmd.args([
         "pr",
         "view",
-        &matched_pr.number.to_string(),
+        &matched_pr.id.to_string(),
         "--json",
         "number,title,url,body,author,comments,reviews,closingIssuesReferences",
     ]);
@@ -404,7 +458,7 @@ fn resolve_pr_via_gh_cli(
 
     let mut inline_comments = Vec::new();
     if let Some(repo) = remote_repo {
-        let endpoint = format!("repos/{repo}/pulls/{}/comments", matched_pr.number);
+        let endpoint = format!("repos/{repo}/pulls/{}/comments", matched_pr.id);
         let mut api_cmd = Command::new("gh");
         api_cmd.args(["api", &endpoint]);
         api_cmd.current_dir(repo_root);
@@ -427,7 +481,7 @@ fn resolve_pr_via_gh_cli(
     }
 
     // Fallback if detailed pr view fails
-    let body_summary = matched_pr.body.as_ref().and_then(|b| {
+    let body_summary = matched_pr.description.as_ref().and_then(|b| {
         let trimmed = b.trim();
         if trimmed.is_empty() {
             None
@@ -437,16 +491,16 @@ fn resolve_pr_via_gh_cli(
     });
 
     let linked_issues = matched_pr
-        .body
+        .description
         .as_deref()
         .map(extract_issues_from_text)
         .unwrap_or_default();
 
     Some(PrDetails {
-        number: matched_pr.number,
+        number: matched_pr.id,
         title: matched_pr.title.clone(),
         url: matched_pr.url.clone(),
-        author: matched_pr.author.as_ref().and_then(|a| a.login.clone()),
+        author: matched_pr.author.clone(),
         body_summary,
         reviewer_highlights: Vec::new(),
         linked_issues,

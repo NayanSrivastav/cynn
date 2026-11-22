@@ -1,16 +1,8 @@
 use crate::enrich::github::{is_technical_rationale, PrDetails, ReviewHighlight};
+use crate::enrich::match_pr::{select_best_pr_candidate, RemotePrCandidate};
 use crate::git::RemoteInfo;
-use serde::Deserialize;
 use std::path::Path;
 use std::process::Command;
-
-#[derive(Deserialize)]
-struct GlabMrJson {
-    iid: u64,
-    title: String,
-    web_url: Option<String>,
-    description: Option<String>,
-}
 
 /// Parse token from glab config.yml content
 pub fn parse_glab_config_token(content: &str, target_host: Option<&str>) -> Option<String> {
@@ -92,11 +84,14 @@ pub fn is_glab_available() -> bool {
 }
 
 /// Direct query to GitLab v4 REST API
+#[allow(clippy::too_many_lines)]
 pub fn fetch_gitlab_mr_api(
     host: &str,
     token: &str,
     owner_repo: &str,
     commit_sha: &str,
+    commit_subject: &str,
+    commit_body: &str,
 ) -> Option<PrDetails> {
     let encoded_repo = owner_repo.replace('/', "%2F");
     let mr_url = format!(
@@ -115,15 +110,36 @@ pub fn fetch_gitlab_mr_api(
         return None;
     }
 
-    let first = &arr[0];
-    let iid = first["iid"].as_u64()?;
-    let title = first["title"].as_str().unwrap_or("").to_string();
-    let url = first["web_url"]
-        .as_str()
-        .map(String::from)
-        .unwrap_or_else(|| format!("https://{host}/{owner_repo}/-/merge_requests/{iid}"));
-    let author = first["author"]["username"].as_str().map(String::from);
-    let description = first["description"].as_str().map(String::from);
+    let candidates: Vec<RemotePrCandidate> =
+        arr.iter()
+            .filter_map(|m| {
+                let iid = m["iid"].as_u64()?;
+                let title = m["title"].as_str().unwrap_or("").to_string();
+                let web_url = m["web_url"].as_str().map(String::from).unwrap_or_else(|| {
+                    format!("https://{host}/{owner_repo}/-/merge_requests/{iid}")
+                });
+                let description = m["description"].as_str().map(String::from);
+                let source_branch = m["source_branch"].as_str().map(String::from);
+                let author = m["author"]["username"].as_str().map(String::from);
+                Some(RemotePrCandidate {
+                    id: iid,
+                    title,
+                    description,
+                    source_branch,
+                    url: web_url,
+                    author,
+                })
+            })
+            .collect();
+
+    let all_matched_prs: Vec<u64> = candidates.iter().map(|c| c.id).collect();
+    let best = select_best_pr_candidate(&candidates, commit_subject, commit_body)?;
+
+    let iid = best.id;
+    let title = best.title.clone();
+    let url = best.url.clone();
+    let author = best.author.clone();
+    let description = best.description.clone();
 
     let body_summary = description.as_ref().and_then(|d| {
         let trimmed = d.trim();
@@ -186,7 +202,7 @@ pub fn fetch_gitlab_mr_api(
         body_summary,
         reviewer_highlights,
         linked_issues,
-        all_matched_prs: vec![iid],
+        all_matched_prs,
     })
 }
 
@@ -208,7 +224,14 @@ pub fn resolve_gitlab_mr(
         .or_else(|| resolve_gitlab_token(Some(host)));
     if let Some(tok) = token {
         if !owner_repo.is_empty() {
-            if let Some(details) = fetch_gitlab_mr_api(host, &tok, owner_repo, commit_sha) {
+            if let Some(details) = fetch_gitlab_mr_api(
+                host,
+                &tok,
+                owner_repo,
+                commit_sha,
+                commit_subject,
+                commit_body,
+            ) {
                 return Some(details);
             }
         }
@@ -216,42 +239,69 @@ pub fn resolve_gitlab_mr(
 
     // 2. Try resolving via local `glab` CLI if available
     let mut cmd = Command::new("glab");
-    cmd.args(["mr", "list", "--commit", commit_sha, "--output", "json"]);
+    cmd.args([
+        "api",
+        &format!("projects/:id/repository/commits/{commit_sha}/merge_requests"),
+    ]);
     cmd.current_dir(repo_root);
 
     if let Ok(output) = cmd.output() {
         if output.status.success() {
-            if let Ok(mrs) = serde_json::from_slice::<Vec<GlabMrJson>>(&output.stdout) {
-                if let Some(mr) = mrs.into_iter().next() {
-                    let url = mr.web_url.unwrap_or_else(|| {
-                        format!("https://{host}/{owner_repo}/-/merge_requests/{}", mr.iid)
-                    });
+            if let Ok(mrs_val) = serde_json::from_slice::<serde_json::Value>(&output.stdout) {
+                if let Some(arr) = mrs_val.as_array() {
+                    let candidates: Vec<RemotePrCandidate> = arr
+                        .iter()
+                        .filter_map(|m| {
+                            let iid = m["iid"].as_u64()?;
+                            let title = m["title"].as_str().unwrap_or("").to_string();
+                            let web_url =
+                                m["web_url"].as_str().map(String::from).unwrap_or_else(|| {
+                                    format!("https://{host}/{owner_repo}/-/merge_requests/{iid}")
+                                });
+                            let description = m["description"].as_str().map(String::from);
+                            let source_branch = m["source_branch"].as_str().map(String::from);
+                            let author = m["author"]["username"].as_str().map(String::from);
+                            Some(RemotePrCandidate {
+                                id: iid,
+                                title,
+                                description,
+                                source_branch,
+                                url: web_url,
+                                author,
+                            })
+                        })
+                        .collect();
 
-                    let body_summary = mr.description.as_ref().and_then(|d| {
-                        let trimmed = d.trim();
-                        if trimmed.is_empty() {
-                            None
-                        } else {
-                            Some(trimmed.lines().next().unwrap_or("").trim().to_string())
-                        }
-                    });
+                    let all_matched_prs: Vec<u64> = candidates.iter().map(|c| c.id).collect();
+                    if let Some(best) =
+                        select_best_pr_candidate(&candidates, commit_subject, commit_body)
+                    {
+                        let body_summary = best.description.as_ref().and_then(|d| {
+                            let trimmed = d.trim();
+                            if trimmed.is_empty() {
+                                None
+                            } else {
+                                Some(trimmed.lines().next().unwrap_or("").trim().to_string())
+                            }
+                        });
 
-                    let linked_issues = mr
-                        .description
-                        .as_deref()
-                        .map(extract_gitlab_issues)
-                        .unwrap_or_default();
+                        let linked_issues = best
+                            .description
+                            .as_deref()
+                            .map(extract_gitlab_issues)
+                            .unwrap_or_default();
 
-                    return Some(PrDetails {
-                        number: mr.iid,
-                        title: mr.title,
-                        url,
-                        author: None,
-                        body_summary,
-                        reviewer_highlights: Vec::new(),
-                        linked_issues,
-                        all_matched_prs: vec![mr.iid],
-                    });
+                        return Some(PrDetails {
+                            number: best.id,
+                            title: best.title.clone(),
+                            url: best.url.clone(),
+                            author: best.author.clone(),
+                            body_summary,
+                            reviewer_highlights: Vec::new(),
+                            linked_issues,
+                            all_matched_prs,
+                        });
+                    }
                 }
             }
         }

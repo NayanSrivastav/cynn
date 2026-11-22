@@ -52,6 +52,10 @@ pub struct OriginSlice {
     pub line_end: usize,
     pub genesis_sha: String,
     pub short_sha: String,
+    pub blame_sha: String,
+    pub blame_short_sha: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blame_commits: Vec<String>,
     pub author: String,
     pub date: String,
     pub summary: String,
@@ -157,21 +161,40 @@ impl<'a> GenesisAnalyzer<'a> {
 
         // 5. Context Enrichment & Origin Attribution
         let (final_genesis, intent_summary, confidence, pr_ref, pr_details) = if is_multi_origin {
+            let any_substantive = origin_slices.iter().any(|s| {
+                if let Ok(c) = self.repo.get_commit(&s.genesis_sha) {
+                    Self::extract_substantive_commit_body(&c.body).is_some()
+                } else {
+                    false
+                }
+            });
+
             let conf = if fallback_used {
                 Confidence::Low
-            } else {
+            } else if any_substantive {
                 Confidence::Medium
+            } else {
+                Confidence::Low
             };
+
             let fallback_note = if fallback_used {
                 "; unverified fallback used for one or more slices"
             } else {
                 ""
             };
+            let distinct_count = distinct_genesis_shas.len();
+            let commit_str = if distinct_count == 1 {
+                "1 distinct introducing commit".to_string()
+            } else {
+                format!("{distinct_count} distinct introducing commits")
+            };
+            let slice_str = if origin_slices.len() == 1 {
+                "1 slice".to_string()
+            } else {
+                format!("{} slices", origin_slices.len())
+            };
             let summary = format!(
-                "Multi-origin block ({} distinct introducing commits across {} slices{}). Inspect individual origin slices for slice-level genesis and rationale.",
-                distinct_genesis_shas.len(),
-                origin_slices.len(),
-                fallback_note
+                "Multi-origin block ({commit_str} across {slice_str}{fallback_note}). Inspect individual origin slices for slice-level genesis and rationale."
             );
             (None, summary, conf, None, None)
         } else {
@@ -291,11 +314,12 @@ impl<'a> GenesisAnalyzer<'a> {
         rel_path: &std::path::Path,
         entries: &[crate::git::BlameEntry],
     ) -> Result<Vec<OriginSlice>, String> {
-        let mut slices = Vec::new();
         if entries.is_empty() {
-            return Ok(slices);
+            return Ok(Vec::new());
         }
 
+        // 1. Group contiguous blame entries by current HEAD blame commit
+        let mut raw_groups = Vec::new();
         let mut group_start = entries[0].final_line;
         let mut group_end = entries[0].final_line;
         let mut current_sha = entries[0].sha.clone();
@@ -304,20 +328,42 @@ impl<'a> GenesisAnalyzer<'a> {
             if entry.sha == current_sha {
                 group_end = entry.final_line;
             } else {
-                let slice =
-                    self.resolve_slice_genesis(rel_path, group_start, group_end, &current_sha)?;
-                slices.push(slice);
-
+                raw_groups.push((group_start, group_end, current_sha.clone()));
                 group_start = entry.final_line;
                 group_end = entry.final_line;
                 current_sha.clone_from(&entry.sha);
             }
         }
+        raw_groups.push((group_start, group_end, current_sha));
 
-        let slice = self.resolve_slice_genesis(rel_path, group_start, group_end, &current_sha)?;
-        slices.push(slice);
+        // 2. Trace genesis for each blame group
+        let mut resolved_slices = Vec::new();
+        for (start, end, blame_sha) in raw_groups {
+            let slice = self.resolve_slice_genesis(rel_path, start, end, &blame_sha)?;
+            resolved_slices.push(slice);
+        }
 
-        Ok(slices)
+        // 3. Coalesce adjacent contiguous slices that share the exact same genesis_sha and fallback status
+        let mut coalesced: Vec<OriginSlice> = Vec::new();
+        for slice in resolved_slices {
+            if let Some(last) = coalesced.last_mut() {
+                if last.line_end + 1 == slice.line_start
+                    && last.genesis_sha == slice.genesis_sha
+                    && last.fallback_used == slice.fallback_used
+                {
+                    last.line_end = slice.line_end;
+                    for b_sha in slice.blame_commits {
+                        if !last.blame_commits.contains(&b_sha) {
+                            last.blame_commits.push(b_sha);
+                        }
+                    }
+                    continue;
+                }
+            }
+            coalesced.push(slice);
+        }
+
+        Ok(coalesced)
     }
 
     fn resolve_slice_genesis(
@@ -350,11 +396,20 @@ impl<'a> GenesisAnalyzer<'a> {
                 (self.repo.get_commit(fallback_sha)?, false, true)
             };
 
+        let blame_short = if fallback_sha.len() >= 7 {
+            fallback_sha[..7].to_string()
+        } else {
+            fallback_sha.to_string()
+        };
+
         Ok(OriginSlice {
             line_start: start,
             line_end: end,
             genesis_sha: genesis_commit.sha,
             short_sha: genesis_commit.short_sha,
+            blame_sha: fallback_sha.to_string(),
+            blame_short_sha: blame_short,
+            blame_commits: vec![fallback_sha.to_string()],
             author: genesis_commit.author_name,
             date: genesis_commit.author_date,
             summary: genesis_commit.subject,
@@ -474,21 +529,9 @@ impl<'a> GenesisAnalyzer<'a> {
             }
         }
 
-        // Case 3: Substantive commit body (>20 chars)
-        if !commit.body.is_empty() {
-            let first_para = commit
-                .body
-                .split("\n\n")
-                .next()
-                .unwrap_or(&commit.body)
-                .replace('\n', " ");
-
-            let trimmed = first_para.trim();
-            if trimmed.len() > 20 {
-                return (trimmed.to_string(), Confidence::Medium);
-            } else if !trimmed.is_empty() {
-                return (trimmed.to_string(), Confidence::Low);
-            }
+        // Case 3: Substantive commit body (>20 chars of actual descriptive rationale)
+        if let Some(substantive) = Self::extract_substantive_commit_body(&commit.body) {
+            return (substantive, Confidence::Medium);
         }
 
         // Case 4: PR title only (low confidence)
@@ -506,6 +549,71 @@ impl<'a> GenesisAnalyzer<'a> {
             "[No explicit rationale recorded in commit or PR history]".to_string(),
             Confidence::None,
         )
+    }
+
+    /// Extract substantive explanatory content from a commit body, filtering out automated
+    /// merge headers, standard Git trailers, and noise.
+    pub fn extract_substantive_commit_body(body: &str) -> Option<String> {
+        let mut substantive_lines = Vec::new();
+
+        for line in body.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            let lower = trimmed.to_lowercase();
+
+            // 1. Filter auto-generated Git merge headers
+            if lower.starts_with("merge branch ")
+                || lower.starts_with("merge remote-tracking branch ")
+                || lower.starts_with("merge tag ")
+                || lower.starts_with("merge pull request ")
+                || lower.starts_with("merged in ")
+            {
+                continue;
+            }
+
+            // 2. Filter Git trailers and metadata
+            if lower.starts_with("signed-off-by:")
+                || lower.starts_with("co-authored-by:")
+                || lower.starts_with("reviewed-by:")
+                || lower.starts_with("acked-by:")
+                || lower.starts_with("see merge request ")
+                || lower.starts_with("change-id:")
+                || lower.starts_with("git-dns-id:")
+                || lower.starts_with("fixes:")
+                || lower.starts_with("resolves:")
+                || lower.starts_with("closes:")
+            {
+                continue;
+            }
+
+            // 3. Filter markdown dividers
+            if trimmed.chars().all(|c| c == '-' || c == '=' || c == '*') && trimmed.len() >= 3 {
+                continue;
+            }
+
+            substantive_lines.push(trimmed);
+        }
+
+        if substantive_lines.is_empty() {
+            return None;
+        }
+
+        let combined = substantive_lines.join(" ");
+        let trimmed = combined.trim();
+
+        // Must be >20 chars and contain at least 3 words to qualify as a substantive explanation
+        if trimmed.len() > 20 && trimmed.split_whitespace().count() >= 3 {
+            let lower = trimmed.to_lowercase();
+            if lower.starts_with("into ") || lower.starts_with("from ") {
+                return None;
+            }
+            Some(trimmed.to_string())
+        } else {
+            None
+        }
     }
 
     /// Assemble structured evidence provenance items with clean attribution separation

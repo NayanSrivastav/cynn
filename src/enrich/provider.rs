@@ -21,9 +21,14 @@ pub fn resolve_remote_context(
     match platform {
         PlatformKind::GitHub => {
             let owner_repo = remote_info.map(|r| r.owner_repo.as_str());
-            if let Some(pr) =
-                resolve_github_pr(repo_root, owner_repo, &commit.sha, manual_token.as_deref())
-            {
+            if let Some(pr) = resolve_github_pr(
+                repo_root,
+                owner_repo,
+                &commit.sha,
+                &commit.subject,
+                &commit.body,
+                manual_token.as_deref(),
+            ) {
                 return Some(pr);
             }
             resolve_generic_trailer(remote_info, commit)

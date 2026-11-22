@@ -73,14 +73,30 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
 
     // Multi-Origin Dissection (if block spans multiple introducing commits)
     if dossier.is_multi_origin {
+        let distinct_count = dossier
+            .origins
+            .iter()
+            .map(|s| &s.genesis_sha)
+            .collect::<std::collections::HashSet<_>>()
+            .len();
+
+        let commit_str = if distinct_count == 1 {
+            "1 distinct introducing commit".to_string()
+        } else {
+            format!("{distinct_count} distinct introducing commits")
+        };
+
+        let slice_str = if dossier.origins.len() == 1 {
+            "1 origin slice".to_string()
+        } else {
+            format!("{} origin slices", dossier.origins.len())
+        };
+
         out.push_str(&format!(
             "🧩 {}\n",
-            format!(
-                "Multi-Origin Range ({} distinct introducing commits):",
-                dossier.origins.len()
-            )
-            .bold()
-            .yellow()
+            format!("Multi-Origin Range ({commit_str} across {slice_str}):")
+                .bold()
+                .yellow()
         ));
         for slice in &dossier.origins {
             let status = if slice.fallback_used {
@@ -91,15 +107,28 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
                 "[blame-fallback]".dimmed().to_string()
             };
             out.push_str(&format!(
-                "   Lines {}-{}: {} {} by {} ({})\n     \"{}\"\n",
+                "   Lines {}-{}: {} {} by {} ({})\n",
                 slice.line_start,
                 slice.line_end,
                 slice.short_sha.yellow(),
                 status,
                 slice.author.green(),
-                slice.date.dimmed(),
-                slice.summary.dimmed()
+                slice.date.dimmed()
             ));
+            if !slice.blame_commits.is_empty()
+                && (slice.blame_commits.len() > 1 || slice.blame_commits[0] != slice.genesis_sha)
+            {
+                let short_blames: Vec<&str> = slice
+                    .blame_commits
+                    .iter()
+                    .map(|sha| if sha.len() >= 7 { &sha[..7] } else { sha })
+                    .collect();
+                out.push_str(&format!(
+                    "     Last modified in HEAD blame: {}\n",
+                    short_blames.join(", ").dimmed()
+                ));
+            }
+            out.push_str(&format!("     \"{}\"\n", slice.summary.dimmed()));
         }
         out.push('\n');
     }
@@ -136,10 +165,20 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
             dossier.intent_summary.white()
         ));
     } else {
+        let distinct_count = dossier
+            .origins
+            .iter()
+            .map(|s| &s.genesis_sha)
+            .collect::<std::collections::HashSet<_>>()
+            .len();
+        let commit_str = if distinct_count == 1 {
+            "1 distinct introducing commit".to_string()
+        } else {
+            format!("{distinct_count} distinct introducing commits")
+        };
         out.push_str(&format!(
-            "{}\n   Range is a composite of {} distinct introducing commits.\n   Review the Origin Slices above for authoritative per-line attribution.\n   Intent: \"{}\"\n\n",
+            "{}\n   Range is a composite of {commit_str}.\n   Review the Origin Slices above for authoritative per-line attribution.\n   Intent: \"{}\"\n\n",
             "📌 Multi-Origin Composition".bold().yellow(),
-            dossier.origins.len(),
             dossier.intent_summary.white()
         ));
     }

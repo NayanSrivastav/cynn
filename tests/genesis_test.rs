@@ -201,8 +201,8 @@ fn test_evolution_milestones_and_multi_origin_block() {
         0,
         "Multi-origin evolution timeline must have zero aggregate genesis markers"
     );
-    // Verified multi-origin block has Medium confidence
-    assert_eq!(dossier_range.confidence, Confidence::Medium);
+    // Multi-origin block with subject-only commits correctly evaluates to Low confidence
+    assert_eq!(dossier_range.confidence, Confidence::Low);
     assert!(!dossier_range.fallback_used);
 }
 
@@ -676,12 +676,87 @@ fn test_multiple_slices_resolving_to_same_genesis_commit() {
         dossier.genesis_commit.as_ref().unwrap().subject,
         "feat: initial pipeline setup (#10)"
     );
-    // Slices are still preserved for line-level inspection
-    assert!(dossier.origins.len() >= 2);
-    for slice in &dossier.origins {
-        assert_eq!(
-            slice.genesis_sha,
-            dossier.genesis_commit.as_ref().unwrap().sha
-        );
-    }
+    // Contiguous slices sharing the same introducing commit coalesce into a single unified origin
+    assert_eq!(dossier.origins.len(), 1);
+    assert_eq!(
+        dossier.origins[0].genesis_sha,
+        dossier.genesis_commit.as_ref().unwrap().sha
+    );
+    // Preserves all blame commits that touched lines within this slice
+    assert!(dossier.origins[0].blame_commits.len() >= 2);
+}
+
+#[test]
+fn test_substantive_body_confidence_filtering() {
+    let dir = tempdir().expect("Failed to create tempdir");
+    let repo_path = dir.path();
+
+    let run = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(repo_path)
+            .status()
+            .expect("Failed to run git command");
+        assert!(status.success(), "Git command failed: {args:?}");
+    };
+
+    run(&["init"]);
+    run(&["config", "user.name", "Nayan Srivastava"]);
+    run(&["config", "user.email", "nayansrivastav@yahoo.in"]);
+
+    // Commit 1: Auto-generated merge text (should NOT get Medium confidence)
+    std::fs::write(
+        repo_path.join("filter.rs"),
+        "pub fn filter() -> bool { true }\n",
+    )
+    .unwrap();
+    run(&["add", "filter.rs"]);
+    run(&[
+        "commit",
+        "-m",
+        "Merge branch 'hotfix/0.0.61.1.1' into hotfix/0.0.61.2",
+    ]);
+
+    let repo = GitRepo::discover(repo_path).expect("Failed to discover repo");
+    let analyzer = GenesisAnalyzer::new(&repo);
+    let target = Target {
+        path: "filter.rs".into(),
+        start_line: Some(1),
+        end_line: Some(1),
+    };
+    let dossier = analyzer.analyze(&target).unwrap();
+    assert_eq!(
+        dossier.confidence,
+        Confidence::Low,
+        "Auto-generated merge message must evaluate to Low confidence"
+    );
+
+    // Commit 2: Substantive technical explanation (>20 chars of real content)
+    std::fs::write(
+        repo_path.join("service.rs"),
+        "pub fn serve() -> bool { true }\n",
+    )
+    .unwrap();
+    run(&["add", "service.rs"]);
+    run(&[
+        "commit",
+        "-m",
+        "refactor(service): rate limiter added\n\nEnforce request throttling to protect downstream service from burst traffic.\n\nSigned-off-by: Nayan <nayansrivastav@yahoo.in>",
+    ]);
+
+    let target2 = Target {
+        path: "service.rs".into(),
+        start_line: Some(1),
+        end_line: Some(1),
+    };
+    let dossier2 = analyzer.analyze(&target2).unwrap();
+    assert_eq!(
+        dossier2.confidence,
+        Confidence::Medium,
+        "Substantive technical explanation in commit body must evaluate to Medium confidence"
+    );
+    assert_eq!(
+        dossier2.intent_summary,
+        "Enforce request throttling to protect downstream service from burst traffic."
+    );
 }
