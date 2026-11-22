@@ -55,6 +55,32 @@ impl GitRepo {
         })
     }
 
+    /// Extract the remote GitHub owner/repo identifier if origin is configured
+    pub fn get_remote_repo(&self) -> Option<String> {
+        let output = Command::new("git")
+            .args(["remote", "get-url", "origin"])
+            .current_dir(&self.root)
+            .output()
+            .ok()?;
+
+        if !output.status.success() {
+            return None;
+        }
+
+        let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        // Handle git@github.com:owner/repo.git or https://github.com/owner/repo.git
+        let cleaned = raw
+            .strip_prefix("git@github.com:")
+            .or_else(|| raw.strip_prefix("https://github.com/"))?;
+
+        let repo = cleaned.trim_end_matches(".git").trim();
+        if repo.is_empty() {
+            None
+        } else {
+            Some(repo.to_string())
+        }
+    }
+
     /// Run git blame on a specific line or range with whitespace/noise filtering
     pub fn blame_lines(
         &self,
