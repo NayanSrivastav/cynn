@@ -41,6 +41,10 @@ pub fn fetch_bitbucket_pr_api(
         .as_str()
         .unwrap_or("")
         .to_string();
+    let author = first["author"]["nickname"]
+        .as_str()
+        .or_else(|| first["author"]["display_name"].as_str())
+        .map(String::from);
     let raw_desc = first["summary"]["raw"].as_str().map(String::from);
 
     let body_summary = raw_desc.as_ref().and_then(|d| {
@@ -99,6 +103,7 @@ pub fn fetch_bitbucket_pr_api(
         number: id,
         title,
         url,
+        author,
         body_summary,
         reviewer_highlights,
         linked_issues,
@@ -150,6 +155,7 @@ pub fn resolve_bitbucket_pr(
                     number,
                     title: commit_subject.to_string(),
                     url,
+                    author: None,
                     body_summary: None,
                     reviewer_highlights: Vec::new(),
                     linked_issues,

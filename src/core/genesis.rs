@@ -56,6 +56,8 @@ pub struct OriginSlice {
     pub summary: String,
     /// Indicates whether git line-history reconstruction successfully resolved the introducing commit.
     pub history_resolved: bool,
+    /// Indicates whether line-history reconstruction fell back to the current HEAD blame commit.
+    pub fallback_used: bool,
 }
 
 /// Evolution milestone representing a historical touchpoint for the code
@@ -252,10 +254,10 @@ impl<'a> GenesisAnalyzer<'a> {
         end: usize,
         fallback_sha: &str,
     ) -> Result<OriginSlice, String> {
-        let (genesis_commit, history_resolved) =
+        let (genesis_commit, history_resolved, fallback_used) =
             if let Ok(history) = self.repo.trace_line_evolution(rel_path, start, end, true) {
                 if let Some(commit) = history.into_iter().last() {
-                    (commit, true)
+                    (commit, true, false)
                 } else {
                     let commit =
                         self.repo
@@ -269,10 +271,10 @@ impl<'a> GenesisAnalyzer<'a> {
                                 subject: String::new(),
                                 body: String::new(),
                             });
-                    (commit, false)
+                    (commit, false, true)
                 }
             } else {
-                (self.repo.get_commit(fallback_sha)?, false)
+                (self.repo.get_commit(fallback_sha)?, false, true)
             };
 
         Ok(OriginSlice {
@@ -284,6 +286,7 @@ impl<'a> GenesisAnalyzer<'a> {
             date: genesis_commit.author_date,
             summary: genesis_commit.subject,
             history_resolved,
+            fallback_used,
         })
     }
 
@@ -426,7 +429,7 @@ impl<'a> GenesisAnalyzer<'a> {
                     category: "historical_rationale".to_string(),
                     evidence_type: "pull_request_body".to_string(),
                     source: format!("PR #{}", pr.number),
-                    author: None,
+                    author: pr.author.clone(),
                     url: Some(pr.url.clone()),
                     excerpt: body.clone(),
                 });

@@ -127,6 +127,7 @@ fn resolve_generic_trailer(
                         number,
                         title: commit.subject.clone(),
                         url,
+                        author: None,
                         body_summary: None,
                         reviewer_highlights: Vec::new(),
                         linked_issues: extract_trailer_issues(&full_text),

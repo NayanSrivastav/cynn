@@ -491,3 +491,82 @@ fn test_multi_platform_gitlab_and_bitbucket_trailers() {
         .url
         .contains("gitlab.com/acme-org/analytics-service/-/merge_requests/145"));
 }
+
+#[test]
+fn test_divergent_branch_merge_provenance_and_author_attribution() {
+    let dir = tempdir().expect("Failed to create tempdir");
+    let repo_path = dir.path();
+
+    let run = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(repo_path)
+            .status()
+            .expect("Failed to run git command");
+        assert!(status.success(), "Git command failed: {args:?}");
+    };
+
+    run(&["init"]);
+    run(&["config", "user.name", "Merge Master"]);
+    run(&["config", "user.email", "master@example.com"]);
+
+    // Initial commit on main
+    let base_file = repo_path.join("README.md");
+    fs::write(&base_file, "# Main App\n").unwrap();
+    run(&["add", "README.md"]);
+    run(&["commit", "-m", "chore: initialize repo"]);
+
+    // Create feature branch
+    run(&["checkout", "-b", "feature/auth"]);
+    run(&["config", "user.name", "Feature Dev"]);
+    run(&["config", "user.email", "dev@example.com"]);
+
+    let auth_file = repo_path.join("auth.rs");
+    fs::write(
+        &auth_file,
+        "pub fn verify_jwt(token: &str) -> bool {\n    !token.is_empty()\n}\n",
+    )
+    .unwrap();
+    run(&["add", "auth.rs"]);
+    run(&[
+        "commit",
+        "-m",
+        "feat(auth): add JWT verification (#88)\n\nVerifies signature and expiration.",
+    ]);
+
+    // Make concurrent commit on main
+    run(&["checkout", "main"]);
+    run(&["config", "user.name", "Merge Master"]);
+    fs::write(&base_file, "# Main App (Updated)\n").unwrap();
+    run(&["add", "README.md"]);
+    run(&["commit", "-m", "docs: update readme concurrently"]);
+
+    // Non-fast-forward merge
+    run(&[
+        "merge",
+        "--no-ff",
+        "feature/auth",
+        "-m",
+        "Merge pull request #88 from feature/auth",
+    ]);
+
+    let repo = GitRepo::discover(repo_path).expect("Failed to discover repo");
+    let analyzer = GenesisAnalyzer::new(&repo);
+    let target = Target {
+        path: "auth.rs".into(),
+        start_line: Some(1),
+        end_line: Some(3),
+    };
+
+    let dossier = analyzer
+        .analyze(&target)
+        .expect("Analysis failed for merge commit");
+
+    assert!(dossier.genesis_commit.is_some());
+    let genesis = dossier.genesis_commit.unwrap();
+    assert_eq!(genesis.author_name, "Feature Dev");
+    assert!(genesis.subject.contains("feat(auth): add JWT verification"));
+    assert_eq!(dossier.pr_reference, Some("#88".to_string()));
+    assert!(dossier.origins[0].history_resolved);
+    assert!(!dossier.origins[0].fallback_used);
+}

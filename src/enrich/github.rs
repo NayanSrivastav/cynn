@@ -17,6 +17,7 @@ pub struct PrDetails {
     pub number: u64,
     pub title: String,
     pub url: String,
+    pub author: Option<String>,
     pub body_summary: Option<String>,
     pub reviewer_highlights: Vec<ReviewHighlight>,
     pub linked_issues: Vec<String>,
@@ -29,6 +30,7 @@ struct GhPrListJson {
     title: String,
     url: String,
     body: Option<String>,
+    author: Option<GhAuthor>,
 }
 
 #[derive(Deserialize)]
@@ -62,6 +64,7 @@ struct GhPrViewJson {
     title: String,
     url: String,
     body: Option<String>,
+    author: Option<GhAuthor>,
     comments: Option<Vec<GhComment>>,
     reviews: Option<Vec<GhReview>>,
     #[serde(rename = "closingIssuesReferences")]
@@ -144,6 +147,7 @@ pub fn fetch_github_pr_api(token: &str, owner_repo: &str, commit_sha: &str) -> O
     let number = first["number"].as_u64()?;
     let title = first["title"].as_str().unwrap_or("").to_string();
     let pr_url = first["html_url"].as_str().unwrap_or("").to_string();
+    let author = first["user"]["login"].as_str().map(String::from);
     let body = first["body"].as_str().map(String::from);
 
     let body_summary = body.as_ref().and_then(|b| {
@@ -240,6 +244,7 @@ pub fn fetch_github_pr_api(token: &str, owner_repo: &str, commit_sha: &str) -> O
         number,
         title,
         url: pr_url,
+        author,
         body_summary,
         reviewer_highlights,
         linked_issues,
@@ -310,7 +315,7 @@ fn resolve_pr_via_gh_cli(
         "view",
         &matched_pr.number.to_string(),
         "--json",
-        "number,title,url,body,comments,reviews,closingIssuesReferences",
+        "number,title,url,body,author,comments,reviews,closingIssuesReferences",
     ]);
     view_cmd.current_dir(repo_root);
     if let Some(repo) = remote_repo {
@@ -361,6 +366,7 @@ fn resolve_pr_via_gh_cli(
         number: matched_pr.number,
         title: matched_pr.title.clone(),
         url: matched_pr.url.clone(),
+        author: matched_pr.author.as_ref().and_then(|a| a.login.clone()),
         body_summary,
         reviewer_highlights: Vec::new(),
         linked_issues,
@@ -368,6 +374,7 @@ fn resolve_pr_via_gh_cli(
     })
 }
 
+#[allow(clippy::too_many_lines)]
 fn build_pr_details(
     view: GhPrViewJson,
     inline_comments: Vec<GhInlineComment>,
@@ -481,6 +488,7 @@ fn build_pr_details(
         number: view.number,
         title: view.title,
         url: view.url,
+        author: view.author.and_then(|a| a.login),
         body_summary,
         reviewer_highlights,
         linked_issues,

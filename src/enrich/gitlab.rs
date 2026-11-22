@@ -54,6 +54,7 @@ pub fn fetch_gitlab_mr_api(
         .as_str()
         .map(String::from)
         .unwrap_or_else(|| format!("https://{host}/{owner_repo}/-/merge_requests/{iid}"));
+    let author = first["author"]["username"].as_str().map(String::from);
     let description = first["description"].as_str().map(String::from);
 
     let body_summary = description.as_ref().and_then(|d| {
@@ -113,6 +114,7 @@ pub fn fetch_gitlab_mr_api(
         number: iid,
         title,
         url,
+        author,
         body_summary,
         reviewer_highlights,
         linked_issues,
@@ -174,6 +176,7 @@ pub fn resolve_gitlab_mr(
                         number: mr.iid,
                         title: mr.title,
                         url,
+                        author: None,
                         body_summary,
                         reviewer_highlights: Vec::new(),
                         linked_issues,
@@ -211,6 +214,7 @@ fn parse_gitlab_trailer(
                         number,
                         title: subject.to_string(),
                         url,
+                        author: None,
                         body_summary: None,
                         reviewer_highlights: Vec::new(),
                         linked_issues: extract_gitlab_issues(&full_text),
