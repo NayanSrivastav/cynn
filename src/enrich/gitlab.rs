@@ -1,4 +1,4 @@
-use crate::enrich::github::PrDetails;
+use crate::enrich::github::{is_technical_rationale, PrDetails, ReviewHighlight};
 use crate::git::RemoteInfo;
 use serde::Deserialize;
 use std::path::Path;
@@ -12,6 +12,114 @@ struct GlabMrJson {
     description: Option<String>,
 }
 
+/// Discover GitLab API authentication token
+pub fn resolve_gitlab_token() -> Option<String> {
+    if let Ok(token) = std::env::var("GITLAB_TOKEN") {
+        let t = token.trim();
+        if !t.is_empty() {
+            return Some(t.to_string());
+        }
+    }
+    None
+}
+
+/// Direct query to GitLab v4 REST API
+pub fn fetch_gitlab_mr_api(
+    host: &str,
+    token: &str,
+    owner_repo: &str,
+    commit_sha: &str,
+) -> Option<PrDetails> {
+    let encoded_repo = owner_repo.replace('/', "%2F");
+    let mr_url = format!(
+        "https://{host}/api/v4/projects/{encoded_repo}/repository/commits/{commit_sha}/merge_requests"
+    );
+
+    let mut res = ureq::get(&mr_url)
+        .header("PRIVATE-TOKEN", token)
+        .header("User-Agent", "git-lineage")
+        .call()
+        .ok()?;
+
+    let mrs_val: serde_json::Value = res.body_mut().read_json().ok()?;
+    let arr = mrs_val.as_array()?;
+    if arr.is_empty() {
+        return None;
+    }
+
+    let first = &arr[0];
+    let iid = first["iid"].as_u64()?;
+    let title = first["title"].as_str().unwrap_or("").to_string();
+    let url = first["web_url"]
+        .as_str()
+        .map(String::from)
+        .unwrap_or_else(|| format!("https://{host}/{owner_repo}/-/merge_requests/{iid}"));
+    let description = first["description"].as_str().map(String::from);
+
+    let body_summary = description.as_ref().and_then(|d| {
+        let trimmed = d.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            let first_para = trimmed.split("\n\n").next().unwrap_or(trimmed).trim();
+            Some(first_para.replace('\n', " "))
+        }
+    });
+
+    let mut linked_issues = Vec::new();
+    if let Some(ref d) = description {
+        for issue in extract_gitlab_issues(d) {
+            if !linked_issues.contains(&issue) {
+                linked_issues.push(issue);
+            }
+        }
+    }
+
+    let mut reviewer_highlights = Vec::new();
+
+    // Fetch MR discussions/notes
+    let notes_url = format!(
+        "https://{host}/api/v4/projects/{encoded_repo}/merge_requests/{iid}/notes?per_page=20"
+    );
+    if let Ok(mut notes_res) = ureq::get(&notes_url)
+        .header("PRIVATE-TOKEN", token)
+        .header("User-Agent", "git-lineage")
+        .call()
+    {
+        if let Ok(notes_val) = notes_res.body_mut().read_json::<serde_json::Value>() {
+            if let Some(notes_arr) = notes_val.as_array() {
+                for n in notes_arr {
+                    let n_body = n["body"].as_str().unwrap_or("").trim();
+                    let system = n["system"].as_bool().unwrap_or(false);
+                    if !system && n_body.len() > 10 {
+                        let author = n["author"]["username"]
+                            .as_str()
+                            .unwrap_or("collaborator")
+                            .to_string();
+                        reviewer_highlights.push(ReviewHighlight {
+                            author,
+                            body: n_body.to_string(),
+                            review_state: Some("NOTE".to_string()),
+                            url: None,
+                            is_technical: is_technical_rationale(n_body),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    Some(PrDetails {
+        number: iid,
+        title,
+        url,
+        body_summary,
+        reviewer_highlights,
+        linked_issues,
+        all_matched_prs: vec![iid],
+    })
+}
+
 /// Resolve GitLab Merge Request details for a given commit
 pub fn resolve_gitlab_mr(
     repo_root: &Path,
@@ -19,8 +127,22 @@ pub fn resolve_gitlab_mr(
     commit_sha: &str,
     commit_subject: &str,
     commit_body: &str,
+    manual_token: Option<&str>,
 ) -> Option<PrDetails> {
-    // 1. Try resolving via local `glab` CLI if available
+    let host = remote_info.map(|r| r.host.as_str()).unwrap_or("gitlab.com");
+    let owner_repo = remote_info.map(|r| r.owner_repo.as_str()).unwrap_or("");
+
+    // 1. Try Direct API with Token
+    let token = manual_token.map(String::from).or_else(resolve_gitlab_token);
+    if let Some(tok) = token {
+        if !owner_repo.is_empty() {
+            if let Some(details) = fetch_gitlab_mr_api(host, &tok, owner_repo, commit_sha) {
+                return Some(details);
+            }
+        }
+    }
+
+    // 2. Try resolving via local `glab` CLI if available
     let mut cmd = Command::new("glab");
     cmd.args(["mr", "list", "--commit", commit_sha, "--output", "json"]);
     cmd.current_dir(repo_root);
@@ -29,8 +151,6 @@ pub fn resolve_gitlab_mr(
         if output.status.success() {
             if let Ok(mrs) = serde_json::from_slice::<Vec<GlabMrJson>>(&output.stdout) {
                 if let Some(mr) = mrs.into_iter().next() {
-                    let host = remote_info.map(|r| r.host.as_str()).unwrap_or("gitlab.com");
-                    let owner_repo = remote_info.map(|r| r.owner_repo.as_str()).unwrap_or("");
                     let url = mr.web_url.unwrap_or_else(|| {
                         format!("https://{host}/{owner_repo}/-/merge_requests/{}", mr.iid)
                     });
@@ -64,8 +184,7 @@ pub fn resolve_gitlab_mr(
         }
     }
 
-    // 2. Offline fallback: Parse standard GitLab MR commit trailers
-    // Pattern: "See merge request !123" or "See merge request group/project!123"
+    // 3. Fallback to commit message trailers
     parse_gitlab_trailer(remote_info, commit_subject, commit_body)
 }
 
@@ -101,6 +220,7 @@ fn parse_gitlab_trailer(
             }
         }
     }
+
     None
 }
 

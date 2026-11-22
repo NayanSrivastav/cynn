@@ -22,6 +22,7 @@ anyhow = "1.0"
 # Serialization (JSON & Agent Output)
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+ureq = { version = "3.5.2", features = ["json"] }
 
 [dev-dependencies]
 tempfile = "3.12"

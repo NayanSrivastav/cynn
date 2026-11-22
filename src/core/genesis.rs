@@ -1,17 +1,21 @@
-use crate::core::target::Target;
-use crate::enrich::{find_related_tests, resolve_remote_context, PrDetails};
+use crate::core::Target;
+use crate::enrich::github::PrDetails;
+use crate::enrich::provider::resolve_remote_context;
+use crate::enrich::test_match::find_related_tests;
 use crate::git::{CommitInfo, GitRepo};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Confidence classification based strictly on verifiable historical evidence depth
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Confidence {
-    #[serde(rename = "high")]
+    /// Substantive PR description (>20 chars) OR substantive reviewer technical decision verified
     High,
-    #[serde(rename = "medium")]
+    /// Substantive commit description (>20 chars) verified from Git history
     Medium,
-    #[serde(rename = "low")]
+    /// PR title or commit subject only (no extended rationale recorded)
     Low,
-    #[serde(rename = "none")]
+    /// No rationale found in commit or review history (never hallucinated)
     None,
 }
 
@@ -33,9 +37,10 @@ impl std::fmt::Display for Confidence {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EvidenceItem {
     pub category: String, // "historical_rationale", "code_provenance", "companion_test"
-    pub evidence_type: String, // "pull_request_review", "pull_request_body", "commit_message", "test_suite"
+    pub evidence_type: String, // "technical_rationale", "review_discussion", "pull_request_body", "commit_message", "test_suite"
     pub source: String,
     pub author: Option<String>,
+    pub url: Option<String>,
     pub excerpt: String,
 }
 
@@ -49,7 +54,8 @@ pub struct OriginSlice {
     pub author: String,
     pub date: String,
     pub summary: String,
-    pub is_verified: bool,
+    /// Indicates whether git line-history reconstruction successfully resolved the introducing commit.
+    pub history_resolved: bool,
 }
 
 /// Evolution milestone representing a historical touchpoint for the code
@@ -62,7 +68,8 @@ pub struct EvolutionMilestone {
     pub summary: String,
     pub pr_reference: Option<String>,
     pub is_genesis: bool,
-    pub is_verified: bool,
+    /// Indicates whether git line-history reconstruction successfully resolved this historical milestone.
+    pub history_resolved: bool,
 }
 
 /// Complete archaeological dossier for a target line or block
@@ -72,7 +79,9 @@ pub struct LineageDossier {
     pub line_range: String,
     pub code_snippet: String,
     pub is_multi_origin: bool,
-    pub genesis_commit: CommitInfo,
+    /// Introducing commit if the line range has a single origin.
+    /// For multi-origin ranges, this is None: the individual `origins` slices are authoritative.
+    pub genesis_commit: Option<CommitInfo>,
     pub origins: Vec<OriginSlice>,
     pub pr_reference: Option<String>,
     pub pr_details: Option<PrDetails>,
@@ -121,45 +130,64 @@ impl<'a> GenesisAnalyzer<'a> {
         let (genesis_commit, milestones) =
             self.trace_provenance(&target.path, start_line, end_line, &origin_slices)?;
 
-        // 5. Context Enrichment: Multi-platform PR details, discussions, and linked issues
-        let remote_info = self.repo.get_remote_info();
-        let mut pr_ref = Self::extract_pr_reference(&genesis_commit.subject, &genesis_commit.body);
-        let mut pr_details =
-            resolve_remote_context(&self.repo.root, remote_info.as_ref(), &genesis_commit);
+        // 5. Context Enrichment & Origin Attribution
+        let (final_genesis, intent_summary, confidence, pr_ref, pr_details) = if is_multi_origin {
+            let summary = format!(
+                "Multi-origin block ({} distinct introducing commits). Inspect individual origin slices for slice-level genesis and rationale.",
+                origin_slices.len()
+            );
+            (None, summary, Confidence::Medium, None, None)
+        } else {
+            let remote_info = self.repo.get_remote_info();
+            let mut pr_ref =
+                Self::extract_pr_reference(&genesis_commit.subject, &genesis_commit.body);
+            let mut pr_details =
+                resolve_remote_context(&self.repo.root, remote_info.as_ref(), &genesis_commit);
 
-        // If no PR was found on genesis, check if any milestone commit has a linked PR
-        if pr_details.is_none() {
-            for m in milestones.iter().rev() {
-                if let Ok(m_commit) = self.repo.get_commit(&m.commit_sha) {
-                    if let Some(details) =
-                        resolve_remote_context(&self.repo.root, remote_info.as_ref(), &m_commit)
-                    {
-                        if pr_ref.is_none() {
-                            pr_ref = Some(format!("#{}", details.number));
+            if pr_details.is_none() {
+                for m in milestones.iter().rev() {
+                    if let Ok(m_commit) = self.repo.get_commit(&m.commit_sha) {
+                        if let Some(details) =
+                            resolve_remote_context(&self.repo.root, remote_info.as_ref(), &m_commit)
+                        {
+                            if pr_ref.is_none() {
+                                pr_ref = Some(format!("#{}", details.number));
+                            }
+                            pr_details = Some(details);
+                            break;
                         }
-                        pr_details = Some(details);
-                        break;
                     }
                 }
             }
-        }
 
-        if let Some(ref pr) = pr_details {
-            if pr_ref.is_none() {
-                pr_ref = Some(format!("#{}", pr.number));
+            if let Some(ref pr) = pr_details {
+                if pr_ref.is_none() {
+                    pr_ref = Some(format!("#{}", pr.number));
+                }
             }
-        }
 
-        // 6. Strict Intent & Confidence Engine (Facts vs Interpretations)
-        let (intent_summary, confidence) =
-            Self::evaluate_intent_and_confidence(&genesis_commit, pr_details.as_ref());
+            let (intent, conf) =
+                Self::evaluate_intent_and_confidence(&genesis_commit, pr_details.as_ref());
 
-        // 7. Companion Tests
+            (
+                Some(genesis_commit.clone()),
+                intent,
+                conf,
+                pr_ref,
+                pr_details,
+            )
+        };
+
+        // 6. Companion Tests
         let related_tests = find_related_tests(&self.repo.root, &target.path);
 
-        // 8. Assemble Structured Evidence Model
-        let evidence =
-            Self::assemble_evidence(&genesis_commit, pr_details.as_ref(), &related_tests);
+        // 7. Assemble Structured Evidence Model
+        let evidence = Self::assemble_evidence(
+            final_genesis.as_ref(),
+            &origin_slices,
+            pr_details.as_ref(),
+            &related_tests,
+        );
 
         Ok(LineageDossier {
             file_path: target.path.display().to_string(),
@@ -170,7 +198,7 @@ impl<'a> GenesisAnalyzer<'a> {
             },
             code_snippet,
             is_multi_origin,
-            genesis_commit,
+            genesis_commit: final_genesis,
             origins: origin_slices,
             pr_reference: pr_ref,
             pr_details,
@@ -201,7 +229,6 @@ impl<'a> GenesisAnalyzer<'a> {
             if entry.sha == current_sha {
                 group_end = entry.final_line;
             } else {
-                // Finish current slice
                 let slice =
                     self.resolve_slice_genesis(rel_path, group_start, group_end, &current_sha)?;
                 slices.push(slice);
@@ -212,7 +239,6 @@ impl<'a> GenesisAnalyzer<'a> {
             }
         }
 
-        // Add final slice
         let slice = self.resolve_slice_genesis(rel_path, group_start, group_end, &current_sha)?;
         slices.push(slice);
 
@@ -226,7 +252,7 @@ impl<'a> GenesisAnalyzer<'a> {
         end: usize,
         fallback_sha: &str,
     ) -> Result<OriginSlice, String> {
-        let (genesis_commit, is_verified) =
+        let (genesis_commit, history_resolved) =
             if let Ok(history) = self.repo.trace_line_evolution(rel_path, start, end, true) {
                 if let Some(commit) = history.into_iter().last() {
                     (commit, true)
@@ -257,7 +283,7 @@ impl<'a> GenesisAnalyzer<'a> {
             author: genesis_commit.author_name,
             date: genesis_commit.author_date,
             summary: genesis_commit.subject,
-            is_verified,
+            history_resolved,
         })
     }
 
@@ -292,7 +318,7 @@ impl<'a> GenesisAnalyzer<'a> {
                         summary: commit.subject,
                         pr_reference: pr_ref,
                         is_genesis,
-                        is_verified: true,
+                        history_resolved: true,
                     });
                 }
 
@@ -313,14 +339,14 @@ impl<'a> GenesisAnalyzer<'a> {
             summary: commit.subject.clone(),
             pr_reference: pr_ref,
             is_genesis: true,
-            is_verified: primary_slice.is_verified,
+            history_resolved: primary_slice.history_resolved,
         }];
 
         Ok((commit, milestones))
     }
 
     /// Strict confidence scoring based on verifiable evidence depth:
-    /// High: Substantive PR description (>20 chars) OR reviewer explanation
+    /// High: Substantive PR description (>20 chars) OR substantive reviewer technical decision verified
     /// Medium: Substantive commit description (>20 chars)
     /// Low: PR title or commit subject only
     /// None: No rationale recorded
@@ -332,19 +358,20 @@ impl<'a> GenesisAnalyzer<'a> {
             // Case 1: Substantive PR description
             if let Some(ref summary) = pr.body_summary {
                 if summary.trim().len() > 20 {
-                    let full_intent = if pr.reviewer_highlights.is_empty() {
-                        summary.clone()
-                    } else {
-                        format!("{} — Review Note: {}", summary, pr.reviewer_highlights[0])
-                    };
+                    let full_intent =
+                        if let Some(h) = pr.reviewer_highlights.iter().find(|h| h.is_technical) {
+                            format!("{} — Technical Review ({}): {}", summary, h.author, h.body)
+                        } else {
+                            summary.clone()
+                        };
                     return (format!("{}: {}", pr.title, full_intent), Confidence::High);
                 }
             }
 
-            // Case 2: Substantive reviewer discussion notes
-            if !pr.reviewer_highlights.is_empty() {
+            // Case 2: Substantive technical reviewer rationale
+            if let Some(h) = pr.reviewer_highlights.iter().find(|h| h.is_technical) {
                 return (
-                    format!("{}: Review Note: {}", pr.title, pr.reviewer_highlights[0]),
+                    format!("{}: Technical Review ({}): {}", pr.title, h.author, h.body),
                     Confidence::High,
                 );
             }
@@ -386,7 +413,8 @@ impl<'a> GenesisAnalyzer<'a> {
 
     /// Assemble structured evidence provenance items with clean attribution separation
     fn assemble_evidence(
-        commit: &CommitInfo,
+        genesis_commit: Option<&CommitInfo>,
+        origins: &[OriginSlice],
         pr_details: Option<&PrDetails>,
         related_tests: &[String],
     ) -> Vec<EvidenceItem> {
@@ -399,37 +427,49 @@ impl<'a> GenesisAnalyzer<'a> {
                     evidence_type: "pull_request_body".to_string(),
                     source: format!("PR #{}", pr.number),
                     author: None,
+                    url: Some(pr.url.clone()),
                     excerpt: body.clone(),
                 });
             }
             for highlight in &pr.reviewer_highlights {
-                let (author, excerpt) = if let Some((auth, rest)) = highlight.split_once(':') {
-                    (
-                        Some(auth.trim().to_string()),
-                        rest.trim().trim_matches('"').to_string(),
-                    )
-                } else {
-                    (None, highlight.clone())
-                };
-
                 evidence.push(EvidenceItem {
                     category: "historical_rationale".to_string(),
-                    evidence_type: "review_discussion".to_string(),
+                    evidence_type: if highlight.is_technical {
+                        "technical_rationale".to_string()
+                    } else {
+                        "review_discussion".to_string()
+                    },
                     source: format!("PR #{}", pr.number),
-                    author,
-                    excerpt,
+                    author: Some(highlight.author.clone()),
+                    url: highlight.url.clone(),
+                    excerpt: highlight.body.clone(),
                 });
             }
         }
 
-        if !commit.body.is_empty() {
-            evidence.push(EvidenceItem {
-                category: "code_provenance".to_string(),
-                evidence_type: "commit_message".to_string(),
-                source: format!("commit {}", commit.short_sha),
-                author: Some(commit.author_name.clone()),
-                excerpt: commit.body.clone(),
-            });
+        if let Some(commit) = genesis_commit {
+            if !commit.body.is_empty() {
+                evidence.push(EvidenceItem {
+                    category: "code_provenance".to_string(),
+                    evidence_type: "commit_message".to_string(),
+                    source: format!("commit {}", commit.short_sha),
+                    author: Some(commit.author_name.clone()),
+                    url: None,
+                    excerpt: commit.body.clone(),
+                });
+            }
+        } else {
+            // For multi-origin blocks, include each slice introducing commit
+            for slice in origins {
+                evidence.push(EvidenceItem {
+                    category: "code_provenance".to_string(),
+                    evidence_type: "slice_origin".to_string(),
+                    source: format!("lines {}-{}", slice.line_start, slice.line_end),
+                    author: Some(slice.author.clone()),
+                    url: None,
+                    excerpt: format!("commit {}: {}", slice.short_sha, slice.summary),
+                });
+            }
         }
 
         for test in related_tests {
@@ -438,6 +478,7 @@ impl<'a> GenesisAnalyzer<'a> {
                 evidence_type: "test_suite".to_string(),
                 source: test.clone(),
                 author: None,
+                url: None,
                 excerpt: format!("Candidate companion test file {test}"),
             });
         }

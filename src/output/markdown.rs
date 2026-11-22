@@ -18,8 +18,8 @@ pub fn render_markdown(dossier: &LineageDossier) -> String {
         out.push_str("#### Multi-Origin Breakdown\n");
         out.push_str("> ⚠️ **Note:** This line range contains code introduced across multiple distinct commits. See the per-slice breakdown below for true line-by-line attribution.\n\n");
         for slice in &dossier.origins {
-            let status = if slice.is_verified {
-                "Verified"
+            let status = if slice.history_resolved {
+                "Resolved"
             } else {
                 "Fallback Blame"
             };
@@ -36,40 +36,46 @@ pub fn render_markdown(dossier: &LineageDossier) -> String {
         out.push('\n');
     }
 
-    let genesis_title = if dossier.is_multi_origin {
-        "#### Primary Genesis Commit (Foundational Origin)\n"
-    } else {
-        "#### Genesis (Origin Commit)\n"
-    };
-    out.push_str(genesis_title);
-    out.push_str(&format!(
-        "- **Commit:** `{}` ({})\n",
-        dossier.genesis_commit.short_sha, dossier.genesis_commit.author_date
-    ));
-    out.push_str(&format!(
-        "- **Author:** {} `<{}>`\n",
-        dossier.genesis_commit.author_name, dossier.genesis_commit.author_email
-    ));
-    if let Some(ref pr) = dossier.pr_details {
+    if let Some(ref genesis) = dossier.genesis_commit {
+        out.push_str("#### Genesis (Origin Commit)\n");
         out.push_str(&format!(
-            "- **Pull Request / MR:** [{}]({})\n",
-            pr.title, pr.url
+            "- **Commit:** `{}` ({})\n",
+            genesis.short_sha, genesis.author_date
         ));
-        if !pr.linked_issues.is_empty() {
+        out.push_str(&format!(
+            "- **Author:** {} `<{}>`\n",
+            genesis.author_name, genesis.author_email
+        ));
+        if let Some(ref pr) = dossier.pr_details {
             out.push_str(&format!(
-                "- **Linked Issues:** {}\n",
-                pr.linked_issues.join(", ")
+                "- **Pull Request / MR:** [{}]({})\n",
+                pr.title, pr.url
             ));
+            if !pr.linked_issues.is_empty() {
+                out.push_str(&format!(
+                    "- **Linked Issues:** {}\n",
+                    pr.linked_issues.join(", ")
+                ));
+            }
+            if !pr.reviewer_highlights.is_empty() {
+                let h = &pr.reviewer_highlights[0];
+                let state = h.review_state.as_deref().unwrap_or("note");
+                out.push_str(&format!(
+                    "- **Reviewer Note:** {} ({}): {}\n",
+                    h.author, state, h.body
+                ));
+            }
+        } else if let Some(ref pr) = dossier.pr_reference {
+            out.push_str(&format!("- **Reference:** {pr}\n"));
         }
-        if !pr.reviewer_highlights.is_empty() {
-            out.push_str(&format!(
-                "- **Reviewer Note:** {}\n",
-                pr.reviewer_highlights[0]
-            ));
-        }
-    } else if let Some(ref pr) = dossier.pr_reference {
-        out.push_str(&format!("- **Reference:** {pr}\n"));
+    } else {
+        out.push_str("#### Multi-Origin Range\n");
+        out.push_str(&format!(
+            "This code range was introduced across **{} distinct commits**. See the Multi-Origin Breakdown above for per-slice provenance.\n",
+            dossier.origins.len()
+        ));
     }
+
     out.push_str(&format!(
         "- **Recorded Intent:** {}\n",
         dossier.intent_summary

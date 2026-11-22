@@ -71,7 +71,9 @@ fn test_genesis_analyzer_on_fixture_repo() {
     let dossier = analyzer.analyze(&target).expect("Analysis failed");
 
     // 4. Verify that git-lineage correctly bypassed the prettier commit and identified Genesis (#42)
-    assert_eq!(dossier.genesis_commit.author_name, "Test Author");
+    assert!(dossier.genesis_commit.is_some());
+    let genesis = dossier.genesis_commit.unwrap();
+    assert_eq!(genesis.author_name, "Test Author");
     assert_eq!(dossier.pr_reference, Some("#42".to_string()));
     assert!(dossier
         .intent_summary
@@ -126,7 +128,7 @@ fn test_evolution_milestones_and_multi_origin_block() {
     let repo = GitRepo::discover(repo_path).expect("Failed to discover repo");
     let analyzer = GenesisAnalyzer::new(&repo);
 
-    // Test 1: Query line 2 evolution
+    // Test 1: Query line 2 evolution (single-origin line)
     let target_line2 = Target {
         path: "engine.rs".into(),
         start_line: Some(2),
@@ -136,14 +138,15 @@ fn test_evolution_milestones_and_multi_origin_block() {
         .analyze(&target_line2)
         .expect("Analysis failed for line 2");
 
-    // The true genesis of line 2 was Commit 1, despite being edited in Commit 3
+    assert!(!dossier2.is_multi_origin);
+    assert!(dossier2.genesis_commit.is_some());
     assert_eq!(
-        dossier2.genesis_commit.subject,
+        dossier2.genesis_commit.as_ref().unwrap().subject,
         "feat: initial engine setup (#1)"
     );
     assert!(dossier2.evolution.len() >= 2);
     assert_eq!(dossier2.origins.len(), 1);
-    assert!(dossier2.origins[0].is_verified);
+    assert!(dossier2.origins[0].history_resolved);
 
     // Test 2: Query multi-origin range lines 2-3
     let target_range = Target {
@@ -155,6 +158,12 @@ fn test_evolution_milestones_and_multi_origin_block() {
         .analyze(&target_range)
         .expect("Analysis failed for range");
 
+    // Multi-origin block: genesis_commit is None (origins are authoritative)
+    assert!(dossier_range.is_multi_origin);
+    assert!(
+        dossier_range.genesis_commit.is_none(),
+        "Mixed-origin block must not assign an ambiguous single genesis commit"
+    );
     assert_eq!(dossier_range.origins.len(), 2);
     assert_eq!(dossier_range.origins[0].line_start, 2);
     assert_eq!(dossier_range.origins[0].line_end, 2);
@@ -216,11 +225,9 @@ fn test_code_moved_down() {
         .analyze(&target)
         .expect("Analysis failed for moved code");
 
-    // Tracing must correctly track through the position offset to Commit 1
-    assert_eq!(
-        dossier.genesis_commit.subject,
-        "feat: add authenticate function (#10)"
-    );
+    assert!(dossier.genesis_commit.is_some());
+    let genesis = dossier.genesis_commit.unwrap();
+    assert_eq!(genesis.subject, "feat: add authenticate function (#10)");
     assert_eq!(dossier.pr_reference, Some("#10".to_string()));
 }
 
@@ -238,28 +245,33 @@ fn test_merge_commit_provenance() {
         assert!(status.success(), "Git command failed: {args:?}");
     };
 
-    run(&["init"]);
+    run(&["init", "-b", "main"]);
     run(&["config", "user.name", "Nayan Srivastava"]);
     run(&["config", "user.email", "nayansrivastav@yahoo.in"]);
 
-    // Base commit on main
-    fs::write(repo_path.join("README.md"), "# Test Project\n").unwrap();
+    // Initial commit on main
+    let readme = repo_path.join("README.md");
+    fs::write(&readme, "# Core System\n").unwrap();
     run(&["add", "README.md"]);
     run(&["commit", "-m", "chore: initial commit"]);
 
-    // Create feature branch
+    // Feature branch introduces auth module
     run(&["checkout", "-b", "feature/auth"]);
-    let auth_file = repo_path.join("auth.rs");
-    fs::write(&auth_file, "pub fn verify() -> bool {\n    true\n}\n").unwrap();
+    let auth = repo_path.join("auth.rs");
+    fs::write(
+        &auth,
+        "pub fn verify_token(t: &str) -> bool {\n    !t.is_empty()\n}\n",
+    )
+    .unwrap();
     run(&["add", "auth.rs"]);
     run(&[
         "commit",
         "-m",
-        "feat(auth): implement token verification (#42)\n\nCloses #42 with HMAC validation.",
+        "feat(auth): implement token verification (#42)",
     ]);
 
-    // Merge back into main with --no-ff merge commit
-    run(&["checkout", "-b", "main_branch"]);
+    // Back to main and merge with --no-ff
+    run(&["checkout", "main"]);
     run(&[
         "merge",
         "--no-ff",
@@ -279,12 +291,143 @@ fn test_merge_commit_provenance() {
         .analyze(&target)
         .expect("Failed to analyze auth.rs");
 
-    // Must traverse through the merge commit to find the true introducing feature commit
+    assert!(dossier.genesis_commit.is_some());
+    let genesis = dossier.genesis_commit.unwrap();
     assert_eq!(
-        dossier.genesis_commit.subject,
+        genesis.subject,
         "feat(auth): implement token verification (#42)"
     );
     assert_eq!(dossier.pr_reference, Some("#42".to_string()));
+}
+
+#[test]
+fn test_squash_merge_provenance() {
+    let dir = tempdir().expect("Failed to create tempdir");
+    let repo_path = dir.path();
+
+    let run = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(repo_path)
+            .status()
+            .expect("Failed to run git command");
+        assert!(status.success(), "Git command failed: {args:?}");
+    };
+
+    run(&["init", "-b", "main"]);
+    run(&["config", "user.name", "Nayan Srivastava"]);
+    run(&["config", "user.email", "nayansrivastav@yahoo.in"]);
+
+    let readme = repo_path.join("README.md");
+    fs::write(&readme, "# Base Project\n").unwrap();
+    run(&["add", "README.md"]);
+    run(&["commit", "-m", "chore: initial commit"]);
+
+    // Feature branch
+    run(&["checkout", "-b", "feature/cache"]);
+    let cache = repo_path.join("cache.rs");
+    fs::write(
+        &cache,
+        "pub fn get_cache(key: &str) -> Option<String> {\n    Some(key.to_string())\n}\n",
+    )
+    .unwrap();
+    run(&["add", "cache.rs"]);
+    run(&["commit", "-m", "feat(cache): implement redis client (#99)"]);
+
+    // Squash merge into main
+    run(&["checkout", "main"]);
+    run(&["merge", "--squash", "feature/cache"]);
+    run(&[
+        "commit",
+        "-m",
+        "feat(cache): squash merge cache module (#99)\n\nSquashed commit of redis caching.",
+    ]);
+
+    let repo = GitRepo::discover(repo_path).expect("Failed to discover repo");
+    let analyzer = GenesisAnalyzer::new(&repo);
+    let target = Target {
+        path: "cache.rs".into(),
+        start_line: Some(1),
+        end_line: Some(3),
+    };
+    let dossier = analyzer
+        .analyze(&target)
+        .expect("Analysis failed for squash merge");
+
+    assert!(dossier.genesis_commit.is_some());
+    assert_eq!(dossier.pr_reference, Some("#99".to_string()));
+    assert!(dossier.origins[0].history_resolved);
+}
+
+#[test]
+fn test_rebased_commit_provenance() {
+    let dir = tempdir().expect("Failed to create tempdir");
+    let repo_path = dir.path();
+
+    let run = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(repo_path)
+            .status()
+            .expect("Failed to run git command");
+        assert!(status.success(), "Git command failed: {args:?}");
+    };
+
+    run(&["init", "-b", "main"]);
+    run(&["config", "user.name", "Nayan Srivastava"]);
+    run(&["config", "user.email", "nayansrivastav@yahoo.in"]);
+
+    let readme = repo_path.join("README.md");
+    fs::write(&readme, "# Base\n").unwrap();
+    run(&["add", "README.md"]);
+    run(&["commit", "-m", "chore: base commit"]);
+
+    // Branch off
+    run(&["checkout", "-b", "feature/logger"]);
+    let logger = repo_path.join("logger.rs");
+    fs::write(
+        &logger,
+        "pub fn log_event(ev: &str) {\n    println!(\"{ev}\");\n}\n",
+    )
+    .unwrap();
+    run(&["add", "logger.rs"]);
+    run(&[
+        "commit",
+        "-m",
+        "feat(logger): introduce structured logger (#55)",
+    ]);
+
+    // Advance main
+    run(&["checkout", "main"]);
+    fs::write(&readme, "# Base Project Advanced\n").unwrap();
+    run(&["add", "README.md"]);
+    run(&["commit", "-m", "docs: update readme on main"]);
+
+    // Rebase feature/logger on main
+    run(&["checkout", "feature/logger"]);
+    run(&["rebase", "main"]);
+
+    // Fast-forward merge into main
+    run(&["checkout", "main"]);
+    run(&["merge", "--ff-only", "feature/logger"]);
+
+    let repo = GitRepo::discover(repo_path).expect("Failed to discover repo");
+    let analyzer = GenesisAnalyzer::new(&repo);
+    let target = Target {
+        path: "logger.rs".into(),
+        start_line: Some(1),
+        end_line: Some(3),
+    };
+    let dossier = analyzer
+        .analyze(&target)
+        .expect("Analysis failed for rebased commit");
+
+    assert!(dossier.genesis_commit.is_some());
+    assert_eq!(dossier.pr_reference, Some("#55".to_string()));
+    assert_eq!(
+        dossier.genesis_commit.unwrap().subject,
+        "feat(logger): introduce structured logger (#55)"
+    );
 }
 
 #[test]

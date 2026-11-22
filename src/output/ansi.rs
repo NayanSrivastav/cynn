@@ -35,10 +35,10 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
             .yellow()
         ));
         for slice in &dossier.origins {
-            let status = if slice.is_verified {
-                "[verified]".green().to_string()
+            let status = if slice.history_resolved {
+                "[resolved]".green().to_string()
             } else {
-                "[fallback]".dimmed().to_string()
+                "[blame-fallback]".dimmed().to_string()
             };
             out.push_str(&format!(
                 "   Lines {}-{}: {} {} by {} ({})\n     \"{}\"\n",
@@ -55,31 +55,35 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
     }
 
     // Genesis Block
-    let genesis_title = if dossier.is_multi_origin {
-        "📌 Primary Genesis Commit (Foundational Origin)"
+    if let Some(ref genesis) = dossier.genesis_commit {
+        out.push_str(&format!("{}\n", "📌 Genesis (Introducing Commit)".bold()));
+        out.push_str(&format!(
+            "   Commit:    {} ({})\n",
+            genesis.short_sha.yellow().bold(),
+            genesis.author_date.dimmed()
+        ));
+        out.push_str(&format!(
+            "   Author:    {} <{}>\n",
+            genesis.author_name.green(),
+            genesis.author_email.dimmed()
+        ));
+
+        if let Some(ref pr) = dossier.pr_reference {
+            out.push_str(&format!("   Reference: {}\n", pr.bright_magenta().bold()));
+        }
+
+        out.push_str(&format!(
+            "   Intent:    \"{}\"\n\n",
+            dossier.intent_summary.white()
+        ));
     } else {
-        "📌 Genesis (Introducing Commit)"
-    };
-    out.push_str(&format!("{}\n", genesis_title.bold()));
-    out.push_str(&format!(
-        "   Commit:    {} ({})\n",
-        dossier.genesis_commit.short_sha.yellow().bold(),
-        dossier.genesis_commit.author_date.dimmed()
-    ));
-    out.push_str(&format!(
-        "   Author:    {} <{}>\n",
-        dossier.genesis_commit.author_name.green(),
-        dossier.genesis_commit.author_email.dimmed()
-    ));
-
-    if let Some(ref pr) = dossier.pr_reference {
-        out.push_str(&format!("   Reference: {}\n", pr.bright_magenta().bold()));
+        out.push_str(&format!(
+            "{}\n   Range is a composite of {} distinct introducing commits.\n   Review the Origin Slices above for authoritative per-line attribution.\n   Intent: \"{}\"\n\n",
+            "📌 Multi-Origin Composition".bold().yellow(),
+            dossier.origins.len(),
+            dossier.intent_summary.white()
+        ));
     }
-
-    out.push_str(&format!(
-        "   Intent:    \"{}\"\n\n",
-        dossier.intent_summary.white()
-    ));
 
     // Evolution Timeline
     out.push_str(&format!("📜 {}\n", "Evolution Timeline".bold()));
@@ -126,9 +130,13 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
             ));
         }
         if !pr.reviewer_highlights.is_empty() {
+            let h = &pr.reviewer_highlights[0];
+            let state = h.review_state.as_deref().unwrap_or("note");
             out.push_str(&format!(
-                "   Review Note:   {}\n",
-                pr.reviewer_highlights[0].italic().dimmed()
+                "   Review Note:   {} ({}): {}\n",
+                h.author.green(),
+                state.dimmed(),
+                h.body.italic().dimmed()
             ));
         }
     }
