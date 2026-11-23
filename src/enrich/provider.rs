@@ -1,6 +1,7 @@
 use crate::enrich::bitbucket::resolve_bitbucket_pr;
 use crate::enrich::github::{resolve_pr_for_commit as resolve_github_pr, PrDetails};
 use crate::enrich::gitlab::resolve_gitlab_mr;
+use crate::enrich::match_pr::RejectedPrDecision;
 use crate::git::{CommitInfo, PlatformKind, RemoteInfo};
 use std::io::IsTerminal;
 use std::path::Path;
@@ -11,7 +12,7 @@ pub fn resolve_remote_context(
     repo_root: &Path,
     remote_info: Option<&RemoteInfo>,
     commit: &CommitInfo,
-) -> Option<PrDetails> {
+) -> (Option<PrDetails>, Vec<RejectedPrDecision>) {
     let platform = remote_info
         .map(|r| r.platform)
         .unwrap_or(PlatformKind::Generic);
@@ -21,45 +22,48 @@ pub fn resolve_remote_context(
     match platform {
         PlatformKind::GitHub => {
             let owner_repo = remote_info.map(|r| r.owner_repo.as_str());
-            if let Some(pr) = resolve_github_pr(
+            let (pr, rejected) = resolve_github_pr(
                 repo_root,
                 owner_repo,
                 &commit.sha,
                 &commit.subject,
                 &commit.body,
                 manual_token.as_deref(),
-            ) {
-                return Some(pr);
+            );
+            if let Some(pr) = pr {
+                return (Some(pr), rejected);
             }
-            resolve_generic_trailer(remote_info, commit)
+            (resolve_generic_trailer(remote_info, commit), rejected)
         }
         PlatformKind::GitLab => {
-            if let Some(mr) = resolve_gitlab_mr(
+            let (mr, rejected) = resolve_gitlab_mr(
                 repo_root,
                 remote_info,
                 &commit.sha,
                 &commit.subject,
                 &commit.body,
                 manual_token.as_deref(),
-            ) {
-                return Some(mr);
+            );
+            if let Some(mr) = mr {
+                return (Some(mr), rejected);
             }
-            resolve_generic_trailer(remote_info, commit)
+            (resolve_generic_trailer(remote_info, commit), rejected)
         }
         PlatformKind::Bitbucket => {
-            if let Some(pr) = resolve_bitbucket_pr(
+            let (pr, rejected) = resolve_bitbucket_pr(
                 repo_root,
                 remote_info,
                 &commit.sha,
                 &commit.subject,
                 &commit.body,
                 manual_token.as_deref(),
-            ) {
-                return Some(pr);
+            );
+            if let Some(pr) = pr {
+                return (Some(pr), rejected);
             }
-            resolve_generic_trailer(remote_info, commit)
+            (resolve_generic_trailer(remote_info, commit), rejected)
         }
-        PlatformKind::Generic => resolve_generic_trailer(remote_info, commit),
+        PlatformKind::Generic => (resolve_generic_trailer(remote_info, commit), Vec::new()),
     }
 }
 

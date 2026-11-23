@@ -1,6 +1,8 @@
 use crate::enrich::github::{is_technical_rationale, PrDetails, ReviewHighlight};
-use crate::enrich::match_pr::{select_best_pr_candidate, RemotePrCandidate};
-use crate::git::RemoteInfo;
+use crate::enrich::match_pr::{
+    select_best_pr_candidate_with_audit, RejectedPrDecision, RemotePrCandidate,
+};
+use crate::git::{PlatformKind, RemoteInfo};
 
 /// RFC 4648 standard base64 encoding helper
 pub fn base64_encode(input: &[u8]) -> String {
@@ -63,7 +65,7 @@ pub fn fetch_bitbucket_pr_api(
     commit_sha: &str,
     commit_subject: &str,
     commit_body: &str,
-) -> Option<PrDetails> {
+) -> (Option<PrDetails>, Vec<RejectedPrDecision>) {
     let auth_header = if token.starts_with("Basic ") || token.starts_with("Bearer ") {
         token.to_string()
     } else if token.contains(':') {
@@ -76,16 +78,22 @@ pub fn fetch_bitbucket_pr_api(
         "https://api.bitbucket.org/2.0/repositories/{owner_repo}/commit/{commit_sha}/pullrequests"
     );
 
-    let mut res = ureq::get(&pr_url)
+    let Ok(mut res) = ureq::get(&pr_url)
         .header("Authorization", &auth_header)
         .header("User-Agent", "git-lineage")
         .call()
-        .ok()?;
+    else {
+        return (None, Vec::new());
+    };
 
-    let prs_val: serde_json::Value = res.body_mut().read_json().ok()?;
-    let arr = prs_val["values"].as_array()?;
+    let Ok(prs_val) = res.body_mut().read_json::<serde_json::Value>() else {
+        return (None, Vec::new());
+    };
+    let Some(arr) = prs_val["values"].as_array() else {
+        return (None, Vec::new());
+    };
     if arr.is_empty() {
-        return None;
+        return (None, Vec::new());
     }
 
     let candidates: Vec<RemotePrCandidate> = arr
@@ -115,7 +123,16 @@ pub fn fetch_bitbucket_pr_api(
         .collect();
 
     let all_matched_prs: Vec<u64> = candidates.iter().map(|c| c.id).collect();
-    let best = select_best_pr_candidate(&candidates, commit_subject, commit_body)?;
+    let (best, rejected) = select_best_pr_candidate_with_audit(
+        &candidates,
+        commit_subject,
+        commit_body,
+        PlatformKind::Bitbucket,
+    );
+
+    let Some(best) = best else {
+        return (None, rejected);
+    };
 
     let id = best.id;
     let title = best.title.clone();
@@ -175,16 +192,19 @@ pub fn fetch_bitbucket_pr_api(
         }
     }
 
-    Some(PrDetails {
-        number: id,
-        title,
-        url,
-        author,
-        body_summary,
-        reviewer_highlights,
-        linked_issues,
-        all_matched_prs,
-    })
+    (
+        Some(PrDetails {
+            number: id,
+            title,
+            url,
+            author,
+            body_summary,
+            reviewer_highlights,
+            linked_issues,
+            all_matched_prs,
+        }),
+        rejected,
+    )
 }
 
 /// Resolve Bitbucket Pull Request details for a given commit
@@ -195,8 +215,9 @@ pub fn resolve_bitbucket_pr(
     commit_subject: &str,
     commit_body: &str,
     manual_token: Option<&str>,
-) -> Option<PrDetails> {
+) -> (Option<PrDetails>, Vec<RejectedPrDecision>) {
     let owner_repo = remote_info.map(|r| r.owner_repo.as_str()).unwrap_or("");
+    let mut all_rejected = Vec::new();
 
     // 1. Try Direct API with Token
     let token = manual_token
@@ -204,10 +225,11 @@ pub fn resolve_bitbucket_pr(
         .or_else(resolve_bitbucket_token);
     if let Some(tok) = token {
         if !owner_repo.is_empty() {
-            if let Some(details) =
-                fetch_bitbucket_pr_api(&tok, owner_repo, commit_sha, commit_subject, commit_body)
-            {
-                return Some(details);
+            let (details, rejected) =
+                fetch_bitbucket_pr_api(&tok, owner_repo, commit_sha, commit_subject, commit_body);
+            all_rejected.extend(rejected);
+            if let Some(details) = details {
+                return (Some(details), all_rejected);
             }
         }
     }
@@ -229,21 +251,24 @@ pub fn resolve_bitbucket_pr(
 
                 let linked_issues = extract_bitbucket_issues(&full_text);
 
-                return Some(PrDetails {
-                    number,
-                    title: commit_subject.to_string(),
-                    url,
-                    author: None,
-                    body_summary: None,
-                    reviewer_highlights: Vec::new(),
-                    linked_issues,
-                    all_matched_prs: vec![number],
-                });
+                return (
+                    Some(PrDetails {
+                        number,
+                        title: commit_subject.to_string(),
+                        url,
+                        author: None,
+                        body_summary: None,
+                        reviewer_highlights: Vec::new(),
+                        linked_issues,
+                        all_matched_prs: vec![number],
+                    }),
+                    all_rejected,
+                );
             }
         }
     }
 
-    None
+    (None, all_rejected)
 }
 
 fn extract_bitbucket_issues(text: &str) -> Vec<String> {

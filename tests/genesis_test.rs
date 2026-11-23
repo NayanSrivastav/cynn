@@ -643,23 +643,23 @@ fn test_multiple_slices_resolving_to_same_genesis_commit() {
     run(&["add", "pipeline.rs"]);
     run(&["commit", "-m", "feat: initial pipeline setup (#10)"]);
 
-    // Commit 2: Modify line 2 only (creates a slice boundary in blame)
+    // Commit 2: Re-indent line 2 with whitespace (creates a slice boundary in plain HEAD blame)
     fs::write(
         &file_path,
-        "line 1: config\nline 2: input_modified\nline 3: transform\nline 4: validate\nline 5: output\n",
+        "line 1: config\n  line 2: input\nline 3: transform\nline 4: validate\nline 5: output\n",
     )
     .unwrap();
     run(&["add", "pipeline.rs"]);
-    run(&["commit", "-m", "fix: adjust input format (#11)"]);
+    run(&["commit", "-m", "style: re-indent input line (#11)"]);
 
-    // Commit 3: Modify line 4 only (creates another slice boundary in blame)
+    // Commit 3: Re-indent line 4 with whitespace (creates another slice boundary in plain HEAD blame)
     fs::write(
         &file_path,
-        "line 1: config\nline 2: input_modified\nline 3: transform\nline 4: validate_strict\nline 5: output\n",
+        "line 1: config\n  line 2: input\nline 3: transform\n  line 4: validate\nline 5: output\n",
     )
     .unwrap();
     run(&["add", "pipeline.rs"]);
-    run(&["commit", "-m", "fix: strict validation (#12)"]);
+    run(&["commit", "-m", "style: re-indent validate line (#12)"]);
 
     let repo = GitRepo::discover(repo_path).expect("Failed to discover repo");
     let analyzer = GenesisAnalyzer::new(&repo);
@@ -821,4 +821,102 @@ fn test_function_targeting_and_genesis_diff() {
     let diff = dossier.genesis_diff.unwrap();
     assert!(diff.contains("pub fn multiply"));
     assert!(diff.contains('+'));
+}
+
+#[test]
+fn test_distinct_line_origins_not_overwritten_by_older_history() {
+    let dir = tempdir().expect("Failed to create tempdir");
+    let repo_path = dir.path();
+
+    let run = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(repo_path)
+            .status()
+            .expect("Failed to run git command");
+        assert!(status.success(), "Git command failed: {args:?}");
+    };
+
+    run(&["init"]);
+    run(&["config", "user.name", "Initial Author"]);
+    run(&["config", "user.email", "initial@example.com"]);
+
+    let sync_file = repo_path.join("SyncDelegate.java");
+
+    // Commit 0: Ancient initial file commit
+    fs::write(
+        &sync_file,
+        "class SyncDelegate {\n    Config dbEntry = repo.save();\n}\n",
+    )
+    .unwrap();
+    run(&["add", "SyncDelegate.java"]);
+    run(&["commit", "-m", "feature/COLL-3031: initial database entry"]);
+
+    // Commit 1: Sanket introduces Jira export block
+    run(&["config", "user.name", "Sanket Jain"]);
+    fs::write(
+        &sync_file,
+        "class SyncDelegate {\n    Config dbEntry = repo.save();\n    if (config.isActive() && Service.JIRA) {\n        exportService.handle();\n    }\n}\n",
+    )
+    .unwrap();
+    run(&["add", "SyncDelegate.java"]);
+    run(&["commit", "-m", "feature/COLL-3200: handle jira sync"]);
+
+    // Commit 2: Anzar turns if into else if
+    run(&["config", "user.name", "Anzar Kasim"]);
+    fs::write(
+        &sync_file,
+        "class SyncDelegate {\n    Config dbEntry = repo.save();\n    } else if (config.isActive() && Service.JIRA) {\n        exportService.handle();\n    }\n}\n",
+    )
+    .unwrap();
+    run(&["add", "SyncDelegate.java"]);
+    run(&["commit", "-m", "feature/COLL-4109: convert to else if"]);
+
+    let repo = GitRepo::discover(repo_path).expect("Failed to discover repo");
+    let analyzer = GenesisAnalyzer::new(&repo);
+
+    // Target the Jira export block (lines 3-5):
+    // Line 3: modified by COLL-4109
+    // Lines 4-5: introduced by COLL-3200
+    // Neither line was introduced by COLL-3031!
+    let target = Target {
+        path: "SyncDelegate.java".into(),
+        start_line: Some(3),
+        end_line: Some(5),
+        function_name: None,
+    };
+
+    let dossier = analyzer
+        .analyze(&target)
+        .expect("Analysis failed for SyncDelegate.java");
+
+    assert!(
+        dossier.is_multi_origin,
+        "Lines 3-5 were introduced by two distinct commits (COLL-4109 and COLL-3200)"
+    );
+    assert!(
+        dossier.genesis_commit.is_none(),
+        "Multi-origin block must have no aggregate genesis commit"
+    );
+
+    assert_eq!(dossier.origins.len(), 2);
+    // Slice 1: line 3 introduced by COLL-4109 (Anzar)
+    assert_eq!(dossier.origins[0].line_start, 3);
+    assert_eq!(dossier.origins[0].line_end, 3);
+    assert_eq!(dossier.origins[0].author, "Anzar Kasim");
+    assert!(dossier.origins[0].summary.contains("COLL-4109"));
+
+    // Slice 2: lines 4-5 introduced by COLL-3200 (Sanket)
+    assert_eq!(dossier.origins[1].line_start, 4);
+    assert_eq!(dossier.origins[1].line_end, 5);
+    assert_eq!(dossier.origins[1].author, "Sanket Jain");
+    assert!(dossier.origins[1].summary.contains("COLL-3200"));
+
+    // CRITICAL: Ancient commit COLL-3031 must NOT be attributed to any line in this range!
+    for slice in &dossier.origins {
+        assert!(
+            !slice.summary.contains("COLL-3031"),
+            "COLL-3031 must NOT be attributed to lines it never created"
+        );
+    }
 }

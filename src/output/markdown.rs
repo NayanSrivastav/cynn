@@ -164,9 +164,15 @@ pub fn render_markdown(dossier: &LineageDossier) -> String {
         dossier.evidence.len()
     ));
     out.push_str(&format!(
-        "- **Evidence Confidence:** [{}]({})\n\n",
+        "- **Evidence Confidence:** [{}]({})\n",
         dossier.confidence, dossier.confidence_docs
     ));
+    if !dossier.rejected_prs.is_empty() {
+        for rej in &dossier.rejected_prs {
+            out.push_str(&format!("- **Audit Trail:** {}\n", rej.audit_message()));
+        }
+    }
+    out.push('\n');
 
     out.push_str("#### Evolution Timeline\n");
     for m in &dossier.evolution {

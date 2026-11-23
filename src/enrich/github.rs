@@ -1,4 +1,7 @@
-use crate::enrich::match_pr::{select_best_pr_candidate, RemotePrCandidate};
+use crate::enrich::match_pr::{
+    select_best_pr_candidate_with_audit, RejectedPrDecision, RemotePrCandidate,
+};
+use crate::git::PlatformKind;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::process::Command;
@@ -187,19 +190,25 @@ pub fn fetch_github_pr_api(
     commit_sha: &str,
     commit_subject: &str,
     commit_body: &str,
-) -> Option<PrDetails> {
+) -> (Option<PrDetails>, Vec<RejectedPrDecision>) {
     let list_url = format!("https://api.github.com/repos/{owner_repo}/commits/{commit_sha}/pulls");
-    let mut res = ureq::get(&list_url)
+    let Ok(mut res) = ureq::get(&list_url)
         .header("Authorization", &format!("Bearer {token}"))
         .header("User-Agent", "git-lineage")
         .header("Accept", "application/vnd.github+json")
         .call()
-        .ok()?;
+    else {
+        return (None, Vec::new());
+    };
 
-    let prs_val: serde_json::Value = res.body_mut().read_json().ok()?;
-    let arr = prs_val.as_array()?;
+    let Ok(prs_val) = res.body_mut().read_json::<serde_json::Value>() else {
+        return (None, Vec::new());
+    };
+    let Some(arr) = prs_val.as_array() else {
+        return (None, Vec::new());
+    };
     if arr.is_empty() {
-        return None;
+        return (None, Vec::new());
     }
 
     let candidates: Vec<RemotePrCandidate> = arr
@@ -223,7 +232,16 @@ pub fn fetch_github_pr_api(
         .collect();
 
     let all_matched_prs: Vec<u64> = candidates.iter().map(|c| c.id).collect();
-    let best = select_best_pr_candidate(&candidates, commit_subject, commit_body)?;
+    let (best, rejected) = select_best_pr_candidate_with_audit(
+        &candidates,
+        commit_subject,
+        commit_body,
+        PlatformKind::GitHub,
+    );
+
+    let Some(best) = best else {
+        return (None, rejected);
+    };
 
     let number = best.id;
     let title = best.title.clone();
@@ -350,16 +368,19 @@ pub fn fetch_github_pr_api(
         }
     }
 
-    Some(PrDetails {
-        number,
-        title,
-        url: pr_url,
-        author,
-        body_summary,
-        reviewer_highlights,
-        linked_issues,
-        all_matched_prs,
-    })
+    (
+        Some(PrDetails {
+            number,
+            title,
+            url: pr_url,
+            author,
+            body_summary,
+            reviewer_highlights,
+            linked_issues,
+            all_matched_prs,
+        }),
+        rejected,
+    )
 }
 
 /// Resolve Pull Request information, reviewer discussions, and linked issues for a commit SHA.
@@ -371,34 +392,44 @@ pub fn resolve_pr_for_commit(
     commit_subject: &str,
     commit_body: &str,
     manual_token: Option<&str>,
-) -> Option<PrDetails> {
+) -> (Option<PrDetails>, Vec<RejectedPrDecision>) {
+    let mut all_rejected = Vec::new();
+
     // 1. Try Direct API with Token if owner_repo is identified
     let token = manual_token.map(String::from).or_else(resolve_github_token);
     if let (Some(tok), Some(repo)) = (&token, remote_repo) {
-        if let Some(details) =
-            fetch_github_pr_api(tok, repo, commit_sha, commit_subject, commit_body)
-        {
-            return Some(details);
+        let (details, rejected) =
+            fetch_github_pr_api(tok, repo, commit_sha, commit_subject, commit_body);
+        all_rejected.extend(rejected);
+        if let Some(details) = details {
+            return (Some(details), all_rejected);
         }
     }
 
     // 2. Fallback to local gh CLI if present
-    resolve_pr_via_gh_cli(
+    let (details, rejected) = resolve_pr_via_gh_cli(
         repo_root,
         remote_repo,
         commit_sha,
         commit_subject,
         commit_body,
-    )
+    );
+    for r in rejected {
+        if !all_rejected.contains(&r) {
+            all_rejected.push(r);
+        }
+    }
+    (details, all_rejected)
 }
 
+#[allow(clippy::too_many_lines)]
 fn resolve_pr_via_gh_cli(
     repo_root: &Path,
     remote_repo: Option<&str>,
     commit_sha: &str,
     commit_subject: &str,
     commit_body: &str,
-) -> Option<PrDetails> {
+) -> (Option<PrDetails>, Vec<RejectedPrDecision>) {
     let mut list_cmd = Command::new("gh");
     list_cmd.args([
         "pr",
@@ -417,14 +448,17 @@ fn resolve_pr_via_gh_cli(
         list_cmd.args(["-R", repo]);
     }
 
-    let list_output = list_cmd.output().ok()?;
-    if !list_output.status.success() {
-        return None;
-    }
+    let list_output = match list_cmd.output() {
+        Ok(out) if out.status.success() => out,
+        _ => return (None, Vec::new()),
+    };
 
-    let prs: Vec<GhPrListJson> = serde_json::from_slice(&list_output.stdout).ok()?;
+    let prs: Vec<GhPrListJson> = match serde_json::from_slice(&list_output.stdout) {
+        Ok(p) => p,
+        Err(_) => return (None, Vec::new()),
+    };
     if prs.is_empty() {
-        return None;
+        return (None, Vec::new());
     }
 
     let candidates: Vec<RemotePrCandidate> = prs
@@ -440,7 +474,16 @@ fn resolve_pr_via_gh_cli(
         .collect();
 
     let all_matched_prs: Vec<u64> = candidates.iter().map(|c| c.id).collect();
-    let matched_pr = select_best_pr_candidate(&candidates, commit_subject, commit_body)?;
+    let (matched_pr, rejected) = select_best_pr_candidate_with_audit(
+        &candidates,
+        commit_subject,
+        commit_body,
+        PlatformKind::GitHub,
+    );
+
+    let Some(matched_pr) = matched_pr else {
+        return (None, rejected);
+    };
 
     // Detailed PR view with discussions, reviews, and closing issues
     let mut view_cmd = Command::new("gh");
@@ -475,7 +518,10 @@ fn resolve_pr_via_gh_cli(
     if let Ok(view_out) = view_cmd.output() {
         if view_out.status.success() {
             if let Ok(details) = serde_json::from_slice::<GhPrViewJson>(&view_out.stdout) {
-                return Some(build_pr_details(details, inline_comments, all_matched_prs));
+                return (
+                    Some(build_pr_details(details, inline_comments, all_matched_prs)),
+                    rejected,
+                );
             }
         }
     }
@@ -496,16 +542,19 @@ fn resolve_pr_via_gh_cli(
         .map(extract_issues_from_text)
         .unwrap_or_default();
 
-    Some(PrDetails {
-        number: matched_pr.id,
-        title: matched_pr.title.clone(),
-        url: matched_pr.url.clone(),
-        author: matched_pr.author.clone(),
-        body_summary,
-        reviewer_highlights: Vec::new(),
-        linked_issues,
-        all_matched_prs,
-    })
+    (
+        Some(PrDetails {
+            number: matched_pr.id,
+            title: matched_pr.title.clone(),
+            url: matched_pr.url.clone(),
+            author: matched_pr.author.clone(),
+            body_summary,
+            reviewer_highlights: Vec::new(),
+            linked_issues,
+            all_matched_prs,
+        }),
+        rejected,
+    )
 }
 
 #[allow(clippy::too_many_lines)]

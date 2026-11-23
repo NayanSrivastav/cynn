@@ -247,6 +247,14 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
         "   Confidence Docs: {}\n",
         dossier.confidence_docs.underline().blue()
     ));
+    if !dossier.rejected_prs.is_empty() {
+        for rej in &dossier.rejected_prs {
+            out.push_str(&format!(
+                "   Audit Note:    {}\n",
+                rej.audit_message().yellow()
+            ));
+        }
+    }
 
     // Genesis Diff (when requested via --diff)
     if let Some(ref diff) = dossier.genesis_diff {

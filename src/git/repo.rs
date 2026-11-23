@@ -215,7 +215,7 @@ impl GitRepo {
         })
     }
 
-    /// Run git blame on a specific line or range with whitespace/noise filtering
+    /// Run git blame on a specific line or range with whitespace/noise filtering and movement detection
     pub fn blame_lines(
         &self,
         rel_path: &Path,
@@ -229,7 +229,7 @@ impl GitRepo {
             .arg(format!("-L{start_line},{end_line}"));
 
         if ignore_whitespace {
-            cmd.arg("-w");
+            cmd.arg("-w").arg("-C").arg("-C").arg("-M");
         }
 
         cmd.arg("--").arg(rel_path).current_dir(&self.root);
@@ -246,6 +246,36 @@ impl GitRepo {
         Ok(Self::parse_porcelain_blame(&String::from_utf8_lossy(
             &output.stdout,
         )))
+    }
+
+    /// Run both deep genesis blame (-w -C -C -M) and plain HEAD blame for comparison
+    pub fn blame_lines_with_head(
+        &self,
+        rel_path: &Path,
+        start_line: usize,
+        end_line: usize,
+    ) -> Result<(Vec<BlameEntry>, Vec<BlameEntry>), String> {
+        let genesis_blame = self.blame_lines(rel_path, start_line, end_line, true)?;
+
+        let mut cmd = Command::new("git");
+        cmd.arg("blame")
+            .arg("--line-porcelain")
+            .arg(format!("-L{start_line},{end_line}"))
+            .arg("--")
+            .arg(rel_path)
+            .current_dir(&self.root);
+
+        let output = cmd
+            .output()
+            .map_err(|e| format!("Failed to run HEAD git blame: {e}"))?;
+
+        let head_blame = if output.status.success() {
+            Self::parse_porcelain_blame(&String::from_utf8_lossy(&output.stdout))
+        } else {
+            genesis_blame.clone()
+        };
+
+        Ok((genesis_blame, head_blame))
     }
 
     /// Read lines of a file from the repository worktree, falling back to git show HEAD:<path>

@@ -1,4 +1,24 @@
+use crate::git::PlatformKind;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+
+/// Detailed record of why a candidate PR or MR was disqualified during forensic correlation
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RejectedPrDecision {
+    pub reference: String,
+    pub title: String,
+    pub url: String,
+    pub reason: String,
+}
+
+impl RejectedPrDecision {
+    pub fn audit_message(&self) -> String {
+        format!(
+            "Linked PR {} (\"{}\") rejected because {}",
+            self.reference, self.title, self.reason
+        )
+    }
+}
 
 /// Structure representing a candidate Pull Request or Merge Request for correlation
 #[derive(Debug, Clone)]
@@ -15,7 +35,16 @@ pub struct RemotePrCandidate {
 pub fn extract_issue_keys(text: &str) -> Vec<String> {
     let mut keys = Vec::new();
 
-    for token in text.split_whitespace() {
+    for token in text.split(|c: char| {
+        c.is_whitespace()
+            || c == '/'
+            || c == ':'
+            || c == '('
+            || c == ')'
+            || c == '['
+            || c == ']'
+            || c == ','
+    }) {
         let clean = token.trim_matches(|c: char| {
             !c.is_alphanumeric() && c != '-' && c != '_' && c != '#' && c != '!'
         });
@@ -58,30 +87,33 @@ pub fn extract_issue_keys(text: &str) -> Vec<String> {
     keys
 }
 
-/// Disqualify or score candidate PRs/MRs against commit metadata to guarantee zero false attribution.
-///
-/// Rules:
-/// 1. If commit has issue keys (e.g., "COLL-7431"), candidate PR MUST mention at least one of them.
-///    If candidate PR contains a conflicting issue key (e.g. "COLL-7406") and does NOT mention
-///    the commit's key, it is strictly DISQUALIFIED (Score -1).
-/// 2. If commit has no issue keys, candidate PRs with explicit issue keys that the commit does not mention
-///    are treated as unrelated and disqualified.
-/// 3. Candidates with identical or high text similarity in title score highly.
-/// 4. If all candidates are disqualified or score <= 0, None is returned.
-pub fn select_best_pr_candidate<'a>(
+/// Disqualify or score candidate PRs/MRs against commit metadata to guarantee zero false attribution,
+/// returning the best candidate (if verified) alongside an audit trail of any rejected candidates.
+#[allow(clippy::too_many_lines)]
+pub fn select_best_pr_candidate_with_audit<'a>(
     candidates: &'a [RemotePrCandidate],
     commit_subject: &str,
     commit_body: &str,
-) -> Option<&'a RemotePrCandidate> {
+    platform: PlatformKind,
+) -> (Option<&'a RemotePrCandidate>, Vec<RejectedPrDecision>) {
     if candidates.is_empty() {
-        return None;
+        return (None, Vec::new());
     }
 
     let full_commit_text = format!("{commit_subject}\n{commit_body}");
     let commit_keys = extract_issue_keys(&full_commit_text);
-    let commit_keys_set: HashSet<String> = commit_keys.iter().cloned().collect();
+    let commit_jira_keys: Vec<String> = commit_keys
+        .iter()
+        .filter(|k| !k.starts_with('#') && !k.starts_with('!'))
+        .cloned()
+        .collect();
 
-    let mut scored_candidates: Vec<(i32, &'a RemotePrCandidate)> = Vec::new();
+    let mut scored_candidates: Vec<(i32, &'a RemotePrCandidate, Option<String>)> = Vec::new();
+
+    let ref_prefix = match platform {
+        PlatformKind::GitLab => "!",
+        _ => "#",
+    };
 
     for candidate in candidates {
         let candidate_title_keys = extract_issue_keys(&candidate.title);
@@ -105,21 +137,18 @@ pub fn select_best_pr_candidate<'a>(
                 all_candidate_keys.push(k.clone());
             }
         }
+        all_candidate_keys.push(format!("{ref_prefix}{}", candidate.id));
         all_candidate_keys.push(format!("#{}", candidate.id));
         all_candidate_keys.push(format!("!{}", candidate.id));
 
-        let score = if commit_keys_set.is_empty() {
-            // Commit has no explicit issue keys
-            // If candidate title contains a specific Jira ticket key (e.g. COLL-7406), it is an issue PR
-            // that the generic commit did not reference.
-            if candidate_title_keys.is_empty() {
-                // Measure title alignment
-                score_text_similarity(commit_subject, &candidate.title)
-            } else {
-                -1 // Disqualified to prevent accidental hijacking
-            }
-        } else {
-            // Commit has explicit issue key(s)
+        let candidate_jira_keys: Vec<String> = all_candidate_keys
+            .iter()
+            .filter(|k| !k.starts_with('#') && !k.starts_with('!'))
+            .cloned()
+            .collect();
+
+        let (score, reject_reason) = if !commit_jira_keys.is_empty() {
+            // Commit has explicit Jira key(s)
             let mut matches_commit_key = false;
             for key in &commit_keys {
                 if all_candidate_keys.contains(key)
@@ -141,23 +170,106 @@ pub fn select_best_pr_candidate<'a>(
             }
 
             if matches_commit_key {
-                100 // Strong positive verification
-            } else if candidate_title_keys.is_empty() {
-                0 // Unrelated / no key match
+                (100, None)
+            } else if !candidate_jira_keys.is_empty() {
+                let reason = format!(
+                    "Jira key '{}' conflicts with commit key '{}'",
+                    candidate_jira_keys[0], commit_jira_keys[0]
+                );
+                (-1, Some(reason))
             } else {
-                // If candidate has its own explicit issue keys (e.g. COLL-7406) and none matched commit keys (COLL-7431),
-                // it is definitely an unrelated PR (e.g. parent release/hotfix umbrella MR).
-                -1 // Strict disqualification
+                let reason = format!(
+                    "PR does not reference required commit key(s) [{}]",
+                    commit_jira_keys.join(", ")
+                );
+                (0, Some(reason))
+            }
+        } else if !commit_keys.is_empty() {
+            // Commit has non-Jira issue key(s) like #123
+            let mut matches = false;
+            for key in &commit_keys {
+                if all_candidate_keys.contains(key) {
+                    matches = true;
+                    break;
+                }
+            }
+            if matches {
+                (100, None)
+            } else {
+                let reason = format!(
+                    "PR does not reference required commit key(s) [{}]",
+                    commit_keys.join(", ")
+                );
+                (0, Some(reason))
+            }
+        } else {
+            // Commit has no issue keys
+            if candidate_jira_keys.is_empty() {
+                let sim = score_text_similarity(commit_subject, &candidate.title);
+                if sim > 0 {
+                    (sim, None)
+                } else {
+                    (
+                        sim,
+                        Some("Insufficient title similarity to commit".to_string()),
+                    )
+                }
+            } else {
+                let reason = format!(
+                    "PR ticket key '{}' not referenced in commit",
+                    candidate_jira_keys[0]
+                );
+                (-1, Some(reason))
             }
         };
 
-        if score > 0 {
-            scored_candidates.push((score, candidate));
-        }
+        scored_candidates.push((score, candidate, reject_reason));
     }
 
-    scored_candidates.sort_by_key(|a| std::cmp::Reverse(a.0));
-    scored_candidates.first().map(|(_, cand)| *cand)
+    let mut eligible: Vec<&(i32, &'a RemotePrCandidate, Option<String>)> = scored_candidates
+        .iter()
+        .filter(|(score, _, _)| *score > 0)
+        .collect();
+    eligible.sort_by_key(|a| std::cmp::Reverse(a.0));
+
+    let best = eligible.first().map(|(_, cand, _)| *cand);
+
+    let mut rejected = Vec::new();
+    for (score, candidate, reason) in scored_candidates {
+        if let Some(best_cand) = best {
+            if best_cand.id == candidate.id {
+                continue;
+            }
+        }
+        let fallback_reason = if score < 0 {
+            "Disqualified due to issue key conflict"
+        } else {
+            "PR did not meet minimum similarity threshold"
+        };
+        rejected.push(RejectedPrDecision {
+            reference: format!("{ref_prefix}{}", candidate.id),
+            title: candidate.title.clone(),
+            url: candidate.url.clone(),
+            reason: reason.unwrap_or_else(|| fallback_reason.to_string()),
+        });
+    }
+
+    (best, rejected)
+}
+
+/// Disqualify or score candidate PRs/MRs against commit metadata to guarantee zero false attribution.
+pub fn select_best_pr_candidate<'a>(
+    candidates: &'a [RemotePrCandidate],
+    commit_subject: &str,
+    commit_body: &str,
+) -> Option<&'a RemotePrCandidate> {
+    select_best_pr_candidate_with_audit(
+        candidates,
+        commit_subject,
+        commit_body,
+        PlatformKind::Generic,
+    )
+    .0
 }
 
 fn score_text_similarity(subject: &str, title: &str) -> i32 {
@@ -323,5 +435,38 @@ mod tests {
 
         let selected = select_best_pr_candidate(&candidates, commit_subject, "").unwrap();
         assert_eq!(selected.id, 55);
+    }
+
+    #[test]
+    fn test_rejected_pr_audit_trail_and_rejection_reason() {
+        let commit_subject = "feature/COLL-7431";
+        let candidates = vec![RemotePrCandidate {
+            id: 1097,
+            title: "Hotfix/0.0.56.2".to_string(),
+            description: Some("Backport COLL-7406 zip extraction".to_string()),
+            source_branch: Some("hotfix/0.0.56.2".to_string()),
+            url: "https://gitlab.com/repo/-/merge_requests/1097".to_string(),
+            author: Some("developer".to_string()),
+        }];
+
+        let (best, rejected) = select_best_pr_candidate_with_audit(
+            &candidates,
+            commit_subject,
+            "",
+            PlatformKind::GitLab,
+        );
+
+        assert!(best.is_none());
+        assert_eq!(rejected.len(), 1);
+        assert_eq!(rejected[0].reference, "!1097");
+        assert_eq!(rejected[0].title, "Hotfix/0.0.56.2");
+        assert_eq!(
+            rejected[0].reason,
+            "Jira key 'COLL-7406' conflicts with commit key 'COLL-7431'"
+        );
+        assert_eq!(
+            rejected[0].audit_message(),
+            "Linked PR !1097 (\"Hotfix/0.0.56.2\") rejected because Jira key 'COLL-7406' conflicts with commit key 'COLL-7431'"
+        );
     }
 }

@@ -1,6 +1,8 @@
 use crate::enrich::github::{is_technical_rationale, PrDetails, ReviewHighlight};
-use crate::enrich::match_pr::{select_best_pr_candidate, RemotePrCandidate};
-use crate::git::RemoteInfo;
+use crate::enrich::match_pr::{
+    select_best_pr_candidate_with_audit, RejectedPrDecision, RemotePrCandidate,
+};
+use crate::git::{PlatformKind, RemoteInfo};
 use std::path::Path;
 use std::process::Command;
 
@@ -92,22 +94,28 @@ pub fn fetch_gitlab_mr_api(
     commit_sha: &str,
     commit_subject: &str,
     commit_body: &str,
-) -> Option<PrDetails> {
+) -> (Option<PrDetails>, Vec<RejectedPrDecision>) {
     let encoded_repo = owner_repo.replace('/', "%2F");
     let mr_url = format!(
         "https://{host}/api/v4/projects/{encoded_repo}/repository/commits/{commit_sha}/merge_requests"
     );
 
-    let mut res = ureq::get(&mr_url)
+    let Ok(mut res) = ureq::get(&mr_url)
         .header("PRIVATE-TOKEN", token)
         .header("User-Agent", "git-lineage")
         .call()
-        .ok()?;
+    else {
+        return (None, Vec::new());
+    };
 
-    let mrs_val: serde_json::Value = res.body_mut().read_json().ok()?;
-    let arr = mrs_val.as_array()?;
+    let Ok(mrs_val) = res.body_mut().read_json::<serde_json::Value>() else {
+        return (None, Vec::new());
+    };
+    let Some(arr) = mrs_val.as_array() else {
+        return (None, Vec::new());
+    };
     if arr.is_empty() {
-        return None;
+        return (None, Vec::new());
     }
 
     let candidates: Vec<RemotePrCandidate> =
@@ -133,7 +141,16 @@ pub fn fetch_gitlab_mr_api(
             .collect();
 
     let all_matched_prs: Vec<u64> = candidates.iter().map(|c| c.id).collect();
-    let best = select_best_pr_candidate(&candidates, commit_subject, commit_body)?;
+    let (best, rejected) = select_best_pr_candidate_with_audit(
+        &candidates,
+        commit_subject,
+        commit_body,
+        PlatformKind::GitLab,
+    );
+
+    let Some(best) = best else {
+        return (None, rejected);
+    };
 
     let iid = best.id;
     let title = best.title.clone();
@@ -194,19 +211,23 @@ pub fn fetch_gitlab_mr_api(
         }
     }
 
-    Some(PrDetails {
-        number: iid,
-        title,
-        url,
-        author,
-        body_summary,
-        reviewer_highlights,
-        linked_issues,
-        all_matched_prs,
-    })
+    (
+        Some(PrDetails {
+            number: iid,
+            title,
+            url,
+            author,
+            body_summary,
+            reviewer_highlights,
+            linked_issues,
+            all_matched_prs,
+        }),
+        rejected,
+    )
 }
 
 /// Resolve GitLab Merge Request details for a given commit
+#[allow(clippy::too_many_lines)]
 pub fn resolve_gitlab_mr(
     repo_root: &Path,
     remote_info: Option<&RemoteInfo>,
@@ -214,9 +235,10 @@ pub fn resolve_gitlab_mr(
     commit_subject: &str,
     commit_body: &str,
     manual_token: Option<&str>,
-) -> Option<PrDetails> {
+) -> (Option<PrDetails>, Vec<RejectedPrDecision>) {
     let host = remote_info.map(|r| r.host.as_str()).unwrap_or("gitlab.com");
     let owner_repo = remote_info.map(|r| r.owner_repo.as_str()).unwrap_or("");
+    let mut all_rejected = Vec::new();
 
     // 1. Try Direct API with Token
     let token = manual_token
@@ -224,15 +246,17 @@ pub fn resolve_gitlab_mr(
         .or_else(|| resolve_gitlab_token(Some(host)));
     if let Some(tok) = token {
         if !owner_repo.is_empty() {
-            if let Some(details) = fetch_gitlab_mr_api(
+            let (details, rejected) = fetch_gitlab_mr_api(
                 host,
                 &tok,
                 owner_repo,
                 commit_sha,
                 commit_subject,
                 commit_body,
-            ) {
-                return Some(details);
+            );
+            all_rejected.extend(rejected);
+            if let Some(details) = details {
+                return (Some(details), all_rejected);
             }
         }
     }
@@ -273,9 +297,19 @@ pub fn resolve_gitlab_mr(
                         .collect();
 
                     let all_matched_prs: Vec<u64> = candidates.iter().map(|c| c.id).collect();
-                    if let Some(best) =
-                        select_best_pr_candidate(&candidates, commit_subject, commit_body)
-                    {
+                    let (best, rejected) = select_best_pr_candidate_with_audit(
+                        &candidates,
+                        commit_subject,
+                        commit_body,
+                        PlatformKind::GitLab,
+                    );
+                    for r in rejected {
+                        if !all_rejected.contains(&r) {
+                            all_rejected.push(r);
+                        }
+                    }
+
+                    if let Some(best) = best {
                         let body_summary = best.description.as_ref().and_then(|d| {
                             let trimmed = d.trim();
                             if trimmed.is_empty() {
@@ -291,16 +325,19 @@ pub fn resolve_gitlab_mr(
                             .map(extract_gitlab_issues)
                             .unwrap_or_default();
 
-                        return Some(PrDetails {
-                            number: best.id,
-                            title: best.title.clone(),
-                            url: best.url.clone(),
-                            author: best.author.clone(),
-                            body_summary,
-                            reviewer_highlights: Vec::new(),
-                            linked_issues,
-                            all_matched_prs,
-                        });
+                        return (
+                            Some(PrDetails {
+                                number: best.id,
+                                title: best.title.clone(),
+                                url: best.url.clone(),
+                                author: best.author.clone(),
+                                body_summary,
+                                reviewer_highlights: Vec::new(),
+                                linked_issues,
+                                all_matched_prs,
+                            }),
+                            all_rejected,
+                        );
                     }
                 }
             }
@@ -308,7 +345,10 @@ pub fn resolve_gitlab_mr(
     }
 
     // 3. Fallback to commit message trailers
-    parse_gitlab_trailer(remote_info, commit_subject, commit_body)
+    (
+        parse_gitlab_trailer(remote_info, commit_subject, commit_body),
+        all_rejected,
+    )
 }
 
 fn parse_gitlab_trailer(

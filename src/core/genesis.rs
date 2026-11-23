@@ -1,6 +1,7 @@
 use crate::core::accordion::AccordionSnippet;
 use crate::core::Target;
 use crate::enrich::github::PrDetails;
+pub use crate::enrich::match_pr::RejectedPrDecision;
 use crate::enrich::provider::resolve_remote_context;
 use crate::enrich::test_match::find_related_tests;
 use crate::git::{CommitInfo, GitRepo};
@@ -108,6 +109,8 @@ pub struct LineageDossier {
     pub snippet_accordion: Option<AccordionSnippet>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub genesis_diff: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rejected_prs: Vec<RejectedPrDecision>,
 }
 
 pub struct GenesisAnalyzer<'a> {
@@ -125,7 +128,7 @@ impl<'a> GenesisAnalyzer<'a> {
     }
 
     /// Analyze the target with optional flags (e.g., `include_diff`)
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines, clippy::missing_panics_doc)]
     pub fn analyze_with_options(
         &self,
         target: &Target,
@@ -142,137 +145,188 @@ impl<'a> GenesisAnalyzer<'a> {
             (start, end, None)
         };
 
-        // 1. Initial porcelain blame with whitespace filtering (-w)
-        let entries = self
-            .repo
-            .blame_lines(&target.path, start_line, end_line, true)?;
+        // 1. Initial porcelain blame: get both genesis blame (-w -C -C -M) and HEAD blame
+        let (genesis_entries, head_entries) =
+            self.repo
+                .blame_lines_with_head(&target.path, start_line, end_line)?;
 
-        if entries.is_empty() {
+        if genesis_entries.is_empty() {
             return Err("No blame information available for specified lines".to_string());
         }
 
         // 2. Extract code snippet
-        let code_snippet = entries
+        let code_snippet = genesis_entries
             .iter()
             .map(|e| e.code.as_str())
             .collect::<Vec<_>>()
             .join("\n");
 
-        // 3. Multi-Origin Dissection: Group contiguous lines by their HEAD commit SHA
-        let origin_slices = self.dissect_origins(&target.path, &entries)?;
+        // 3. Multi-Origin Dissection: Group contiguous lines by their introducing genesis commit SHA
+        let mut origin_slices = self.dissect_origins(&genesis_entries, &head_entries);
 
         // Determine multi-origin status based on DISTINCT resolved introducing commits (genesis_sha),
         // not merely the count of contiguous blame slices. Multiple slices originating from the
         // same introducing commit belong to a single logical origin.
-        let mut distinct_genesis_shas: Vec<&str> = origin_slices
+        let mut distinct_genesis_shas: Vec<String> = origin_slices
             .iter()
-            .map(|s| s.genesis_sha.as_str())
+            .map(|s| s.genesis_sha.clone())
             .collect();
-        distinct_genesis_shas.sort_unstable();
+        distinct_genesis_shas.sort();
         distinct_genesis_shas.dedup();
         let is_multi_origin = distinct_genesis_shas.len() > 1;
 
+        if !is_multi_origin && origin_slices.len() > 1 {
+            let first = origin_slices[0].clone();
+            let last_end = origin_slices
+                .last()
+                .map(|s| s.line_end)
+                .unwrap_or(first.line_end);
+            let mut all_blames = Vec::new();
+            for s in &origin_slices {
+                for b in &s.blame_commits {
+                    if !all_blames.contains(b) {
+                        all_blames.push(b.clone());
+                    }
+                }
+            }
+            origin_slices = vec![OriginSlice {
+                line_start: origin_slices[0].line_start,
+                line_end: last_end,
+                genesis_sha: first.genesis_sha,
+                short_sha: first.short_sha,
+                blame_sha: first.blame_sha,
+                blame_short_sha: first.blame_short_sha,
+                blame_commits: all_blames,
+                author: first.author,
+                date: first.date,
+                summary: first.summary,
+                history_resolved: first.history_resolved,
+                fallback_used: first.fallback_used,
+            }];
+        }
+
         // 4. Line History Reconstruction: Walk backward across revisions to find true genesis
-        let (genesis_commit, milestones, provenance_fallback) =
-            self.trace_provenance(&target.path, start_line, end_line, &origin_slices)?;
+        let (genesis_commit, milestones, provenance_fallback) = self.trace_provenance(
+            &target.path,
+            start_line,
+            end_line,
+            &origin_slices,
+            is_multi_origin,
+        )?;
+
+        if !is_multi_origin {
+            if let Some(ref gc) = genesis_commit {
+                if let Some(slice) = origin_slices.first_mut() {
+                    slice.genesis_sha.clone_from(&gc.sha);
+                    slice.short_sha.clone_from(&gc.short_sha);
+                    slice.author.clone_from(&gc.author_name);
+                    slice.date.clone_from(&gc.author_date);
+                    slice.summary.clone_from(&gc.subject);
+                }
+            }
+        }
 
         let fallback_used = provenance_fallback || origin_slices.iter().any(|s| s.fallback_used);
 
         // 5. Context Enrichment & Origin Attribution
-        let (final_genesis, intent_summary, confidence, pr_ref, pr_details) = if is_multi_origin {
-            let any_substantive = origin_slices.iter().any(|s| {
-                if let Ok(c) = self.repo.get_commit(&s.genesis_sha) {
-                    Self::extract_substantive_commit_body(&c.body).is_some()
+        let (final_genesis, intent_summary, confidence, pr_ref, pr_details, rejected_prs) =
+            if is_multi_origin {
+                let any_substantive = origin_slices.iter().any(|s| {
+                    if let Ok(c) = self.repo.get_commit(&s.genesis_sha) {
+                        Self::extract_substantive_commit_body(&c.body).is_some()
+                    } else {
+                        false
+                    }
+                });
+
+                let conf = if fallback_used {
+                    Confidence::Low
+                } else if any_substantive {
+                    Confidence::Medium
                 } else {
-                    false
-                }
-            });
+                    Confidence::Low
+                };
 
-            let conf = if fallback_used {
-                Confidence::Low
-            } else if any_substantive {
-                Confidence::Medium
-            } else {
-                Confidence::Low
-            };
-
-            let fallback_note = if fallback_used {
-                "; unverified fallback used for one or more slices"
-            } else {
-                ""
-            };
-            let distinct_count = distinct_genesis_shas.len();
-            let commit_str = if distinct_count == 1 {
-                "1 distinct introducing commit".to_string()
-            } else {
-                format!("{distinct_count} distinct introducing commits")
-            };
-            let slice_str = if origin_slices.len() == 1 {
-                "1 slice".to_string()
-            } else {
-                format!("{} slices", origin_slices.len())
-            };
-            let summary = format!(
+                let fallback_note = if fallback_used {
+                    "; unverified fallback used for one or more slices"
+                } else {
+                    ""
+                };
+                let distinct_count = distinct_genesis_shas.len();
+                let commit_str = if distinct_count == 1 {
+                    "1 distinct introducing commit".to_string()
+                } else {
+                    format!("{distinct_count} distinct introducing commits")
+                };
+                let slice_str = if origin_slices.len() == 1 {
+                    "1 slice".to_string()
+                } else {
+                    format!("{} slices", origin_slices.len())
+                };
+                let summary = format!(
                 "Multi-origin block ({commit_str} across {slice_str}{fallback_note}). Inspect individual origin slices for slice-level genesis and rationale."
             );
-            (None, summary, conf, None, None)
-        } else {
-            let remote_info = self.repo.get_remote_info();
-            // If all slices share a single genesis_sha, resolve that authoritative commit
-            let single_genesis_commit = if origin_slices.len() > 1 && !is_multi_origin {
-                self.repo
-                    .get_commit(distinct_genesis_shas[0])
-                    .unwrap_or(genesis_commit)
+                (None, summary, conf, None, None, Vec::new())
             } else {
-                genesis_commit
-            };
+                let remote_info = self.repo.get_remote_info();
+                let single_genesis_commit =
+                    genesis_commit.expect("Single-origin block must have genesis commit");
 
-            let mut pr_ref = Self::extract_pr_reference(
-                &single_genesis_commit.subject,
-                &single_genesis_commit.body,
-            );
-            let mut pr_details = resolve_remote_context(
-                &self.repo.root,
-                remote_info.as_ref(),
-                &single_genesis_commit,
-            );
+                let mut pr_ref = Self::extract_pr_reference(
+                    &single_genesis_commit.subject,
+                    &single_genesis_commit.body,
+                );
+                let (mut pr_details, mut rejected_prs) = resolve_remote_context(
+                    &self.repo.root,
+                    remote_info.as_ref(),
+                    &single_genesis_commit,
+                );
 
-            if pr_details.is_none() {
-                for m in milestones.iter().rev() {
-                    if let Ok(m_commit) = self.repo.get_commit(&m.commit_sha) {
-                        if let Some(details) =
-                            resolve_remote_context(&self.repo.root, remote_info.as_ref(), &m_commit)
-                        {
-                            if pr_ref.is_none() {
-                                pr_ref = Some(format!("#{}", details.number));
+                if pr_details.is_none() {
+                    for m in milestones.iter().rev() {
+                        if let Ok(m_commit) = self.repo.get_commit(&m.commit_sha) {
+                            let (details, rejs) = resolve_remote_context(
+                                &self.repo.root,
+                                remote_info.as_ref(),
+                                &m_commit,
+                            );
+                            for r in rejs {
+                                if !rejected_prs.contains(&r) {
+                                    rejected_prs.push(r);
+                                }
                             }
-                            pr_details = Some(details);
-                            break;
+                            if let Some(details) = details {
+                                if pr_ref.is_none() {
+                                    pr_ref = Some(format!("#{}", details.number));
+                                }
+                                pr_details = Some(details);
+                                break;
+                            }
                         }
                     }
                 }
-            }
 
-            if let Some(ref pr) = pr_details {
-                if pr_ref.is_none() {
-                    pr_ref = Some(format!("#{}", pr.number));
+                if let Some(ref pr) = pr_details {
+                    if pr_ref.is_none() {
+                        pr_ref = Some(format!("#{}", pr.number));
+                    }
                 }
-            }
 
-            let (intent, conf) = Self::evaluate_intent_and_confidence(
-                &single_genesis_commit,
-                pr_details.as_ref(),
-                fallback_used,
-            );
+                let (intent, conf) = Self::evaluate_intent_and_confidence(
+                    &single_genesis_commit,
+                    pr_details.as_ref(),
+                    fallback_used,
+                );
 
-            (
-                Some(single_genesis_commit),
-                intent,
-                conf,
-                pr_ref,
-                pr_details,
-            )
-        };
+                (
+                    Some(single_genesis_commit),
+                    intent,
+                    conf,
+                    pr_ref,
+                    pr_details,
+                    rejected_prs,
+                )
+            };
 
         // 6. Companion Tests
         let related_tests = find_related_tests(&self.repo.root, &target.path);
@@ -360,117 +414,118 @@ impl<'a> GenesisAnalyzer<'a> {
             evolution: milestones,
             snippet_accordion,
             genesis_diff,
+            rejected_prs,
         })
     }
 
-    /// Dissect a line range into contiguous slices and trace each slice to its introducing commit
+    /// Dissect a line range into contiguous slices based on introducing genesis commit SHA
     fn dissect_origins(
         &self,
-        rel_path: &std::path::Path,
-        entries: &[crate::git::BlameEntry],
-    ) -> Result<Vec<OriginSlice>, String> {
-        if entries.is_empty() {
-            return Ok(Vec::new());
+        genesis_entries: &[crate::git::BlameEntry],
+        head_entries: &[crate::git::BlameEntry],
+    ) -> Vec<OriginSlice> {
+        if genesis_entries.is_empty() {
+            return Vec::new();
         }
 
-        // 1. Group contiguous blame entries by current HEAD blame commit
-        let mut raw_groups = Vec::new();
-        let mut group_start = entries[0].final_line;
-        let mut group_end = entries[0].final_line;
-        let mut current_sha = entries[0].sha.clone();
+        let mut raw_slices: Vec<OriginSlice> = Vec::new();
+        let mut group_start = genesis_entries[0].final_line;
+        let mut group_end = genesis_entries[0].final_line;
+        let mut current_genesis_sha = genesis_entries[0].sha.clone();
+        let mut current_blames: Vec<String> = Vec::new();
 
-        for entry in entries.iter().skip(1) {
-            if entry.sha == current_sha {
+        if let Some(h) = head_entries.first() {
+            current_blames.push(h.sha.clone());
+        } else {
+            current_blames.push(current_genesis_sha.clone());
+        }
+
+        for (i, entry) in genesis_entries.iter().enumerate().skip(1) {
+            let head_sha = head_entries
+                .get(i)
+                .map(|h| h.sha.clone())
+                .unwrap_or_else(|| entry.sha.clone());
+
+            if entry.sha == current_genesis_sha {
                 group_end = entry.final_line;
+                if !current_blames.contains(&head_sha) {
+                    current_blames.push(head_sha);
+                }
             } else {
-                raw_groups.push((group_start, group_end, current_sha.clone()));
+                let slice = self.build_origin_slice(
+                    group_start,
+                    group_end,
+                    &current_genesis_sha,
+                    &current_blames,
+                );
+                raw_slices.push(slice);
+
                 group_start = entry.final_line;
                 group_end = entry.final_line;
-                current_sha.clone_from(&entry.sha);
+                current_genesis_sha.clone_from(&entry.sha);
+                current_blames = vec![head_sha];
             }
         }
-        raw_groups.push((group_start, group_end, current_sha));
 
-        // 2. Trace genesis for each blame group
-        let mut resolved_slices = Vec::new();
-        for (start, end, blame_sha) in raw_groups {
-            let slice = self.resolve_slice_genesis(rel_path, start, end, &blame_sha)?;
-            resolved_slices.push(slice);
-        }
+        let slice = self.build_origin_slice(
+            group_start,
+            group_end,
+            &current_genesis_sha,
+            &current_blames,
+        );
+        raw_slices.push(slice);
 
-        // 3. Coalesce adjacent contiguous slices that share the exact same genesis_sha and fallback status
-        let mut coalesced: Vec<OriginSlice> = Vec::new();
-        for slice in resolved_slices {
-            if let Some(last) = coalesced.last_mut() {
-                if last.line_end + 1 == slice.line_start
-                    && last.genesis_sha == slice.genesis_sha
-                    && last.fallback_used == slice.fallback_used
-                {
-                    last.line_end = slice.line_end;
-                    for b_sha in slice.blame_commits {
-                        if !last.blame_commits.contains(&b_sha) {
-                            last.blame_commits.push(b_sha);
-                        }
-                    }
-                    continue;
-                }
-            }
-            coalesced.push(slice);
-        }
-
-        Ok(coalesced)
+        raw_slices
     }
 
-    fn resolve_slice_genesis(
+    fn build_origin_slice(
         &self,
-        rel_path: &std::path::Path,
         start: usize,
         end: usize,
-        fallback_sha: &str,
-    ) -> Result<OriginSlice, String> {
-        let (genesis_commit, history_resolved, fallback_used) =
-            if let Ok(history) = self.repo.trace_line_evolution(rel_path, start, end, true) {
-                if let Some(commit) = history.into_iter().last() {
-                    (commit, true, false)
+        genesis_sha: &str,
+        blame_commits: &[String],
+    ) -> OriginSlice {
+        let commit = self
+            .repo
+            .get_commit(genesis_sha)
+            .unwrap_or_else(|_| CommitInfo {
+                sha: genesis_sha.to_string(),
+                short_sha: if genesis_sha.len() >= 7 {
+                    genesis_sha[..7].to_string()
                 } else {
-                    let commit =
-                        self.repo
-                            .get_commit(fallback_sha)
-                            .unwrap_or_else(|_| CommitInfo {
-                                sha: fallback_sha.to_string(),
-                                short_sha: fallback_sha.chars().take(7).collect(),
-                                author_name: "Unknown".to_string(),
-                                author_email: String::new(),
-                                author_date: String::new(),
-                                subject: String::new(),
-                                body: String::new(),
-                            });
-                    (commit, false, true)
-                }
-            } else {
-                (self.repo.get_commit(fallback_sha)?, false, true)
-            };
+                    genesis_sha.to_string()
+                },
+                author_name: "Unknown".to_string(),
+                author_email: String::new(),
+                author_date: String::new(),
+                subject: String::new(),
+                body: String::new(),
+            });
 
-        let blame_short = if fallback_sha.len() >= 7 {
-            fallback_sha[..7].to_string()
+        let primary_blame = blame_commits
+            .first()
+            .cloned()
+            .unwrap_or_else(|| genesis_sha.to_string());
+        let blame_short = if primary_blame.len() >= 7 {
+            primary_blame[..7].to_string()
         } else {
-            fallback_sha.to_string()
+            primary_blame.clone()
         };
 
-        Ok(OriginSlice {
+        OriginSlice {
             line_start: start,
             line_end: end,
-            genesis_sha: genesis_commit.sha,
-            short_sha: genesis_commit.short_sha,
-            blame_sha: fallback_sha.to_string(),
+            genesis_sha: commit.sha,
+            short_sha: commit.short_sha,
+            blame_sha: primary_blame,
             blame_short_sha: blame_short,
-            blame_commits: vec![fallback_sha.to_string()],
-            author: genesis_commit.author_name,
-            date: genesis_commit.author_date,
-            summary: genesis_commit.subject,
-            history_resolved,
-            fallback_used,
-        })
+            blame_commits: blame_commits.to_vec(),
+            author: commit.author_name,
+            date: commit.author_date,
+            summary: commit.subject,
+            history_resolved: true,
+            fallback_used: false,
+        }
     }
 
     /// Trace the full line history across revisions to reconstruct evolution milestones
@@ -480,13 +535,56 @@ impl<'a> GenesisAnalyzer<'a> {
         start_line: usize,
         end_line: usize,
         origin_slices: &[OriginSlice],
-    ) -> Result<(CommitInfo, Vec<EvolutionMilestone>, bool), String> {
-        let is_multi_origin = origin_slices.len() > 1;
+        is_multi_origin: bool,
+    ) -> Result<(Option<CommitInfo>, Vec<EvolutionMilestone>, bool), String> {
         let commits_history = self
             .repo
             .trace_line_evolution(rel_path, start_line, end_line, true)
             .ok();
 
+        if is_multi_origin {
+            // For multi-origin blocks: no single commit in the aggregate timeline is the sole genesis;
+            // individual origin slices are authoritative.
+            let milestones = if let Some(history) = commits_history {
+                // Find the oldest commit in history that is referenced by any origin slice
+                let last_slice_idx = history.iter().rposition(|c| {
+                    origin_slices.iter().any(|s| {
+                        s.genesis_sha == c.sha
+                            || s.short_sha == c.short_sha
+                            || s.blame_commits.contains(&c.sha)
+                    })
+                });
+
+                let filtered_history: Vec<_> = if let Some(last_idx) = last_slice_idx {
+                    history.into_iter().take(last_idx + 1).collect()
+                } else {
+                    history
+                };
+
+                filtered_history
+                    .into_iter()
+                    .map(|commit| {
+                        let pr_ref = Self::extract_pr_reference(&commit.subject, &commit.body);
+                        EvolutionMilestone {
+                            date: commit.author_date,
+                            commit_sha: commit.sha,
+                            short_sha: commit.short_sha,
+                            author: commit.author_name,
+                            summary: commit.subject,
+                            pr_reference: pr_ref,
+                            is_genesis: false,
+                            history_resolved: true,
+                            fallback_used: false,
+                        }
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            return Ok((None, milestones, false));
+        }
+
+        // Single-origin block: Walk history to find earliest genesis milestone
         if let Some(history) = commits_history {
             if !history.is_empty() {
                 let total = history.len();
@@ -494,10 +592,7 @@ impl<'a> GenesisAnalyzer<'a> {
 
                 let mut milestones = Vec::new();
                 for (idx, commit) in history.into_iter().enumerate() {
-                    // For single-origin blocks, the oldest commit in the lineage is the sole genesis.
-                    // For multi-origin blocks, no single commit in the aggregate timeline is the sole genesis;
-                    // individual origins slices are authoritative.
-                    let is_genesis = !is_multi_origin && (idx == total - 1);
+                    let is_genesis = idx == total - 1;
                     let pr_ref = Self::extract_pr_reference(&commit.subject, &commit.body);
 
                     milestones.push(EvolutionMilestone {
@@ -513,7 +608,7 @@ impl<'a> GenesisAnalyzer<'a> {
                     });
                 }
 
-                return Ok((genesis, milestones, false));
+                return Ok((Some(genesis), milestones, false));
             }
         }
 
@@ -529,12 +624,12 @@ impl<'a> GenesisAnalyzer<'a> {
             author: commit.author_name.clone(),
             summary: commit.subject.clone(),
             pr_reference: pr_ref,
-            is_genesis: !is_multi_origin,
+            is_genesis: true,
             history_resolved: primary_slice.history_resolved,
             fallback_used: true,
         }];
 
-        Ok((commit, milestones, true))
+        Ok((Some(commit), milestones, true))
     }
 
     /// Strict confidence scoring based on verifiable evidence depth:
