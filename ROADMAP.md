@@ -51,8 +51,8 @@
 ## 4. Milestone Progression
 
 ```
-v0.1.0 "Genesis"       v0.2.x "Context"            v0.3.0 "Rationale & AST"       v0.4.0 "Standards & Audit"     v1.0.0 "Production"
- [Fast Local Core]  ─► [PR / Issue Extraction] ─►  [Jira/Linear + Tree-sitter] ─► [.git-blame-ignore + Audit] ─► [CI & Packaging]
+v0.1.0 "Genesis"       v0.2.x "Context"            v0.3.0 "Agent MCP & AST"       v0.4.0 "Standards & Audit"     v1.0.0 "Production"
+ [Fast Local Core]  ─► [PR / Issue Extraction] ─►  [MCP + Jira + Tree-sitter] ─► [.git-blame-ignore + Audit] ─► [CI & Packaging]
 ```
 
 ---
@@ -82,9 +82,13 @@ v0.1.0 "Genesis"       v0.2.x "Context"            v0.3.0 "Rationale & AST"     
 
 ---
 
-### Milestone 3: v0.3.0 — "Rationale & AST" (Immediate Priority)
-* **Focus:** Fix rationale emptiness via issue tracker connectors and eliminate line-drift attribution errors with Tree-sitter.
+### Milestone 3: v0.3.0 — "Agent MCP, Rationale & AST" (Immediate Priority)
+* **Focus:** Position as the unhallucinated provenance primitive for coding agents, fix rationale emptiness via issue trackers, and eliminate line-drift attribution errors with Tree-sitter.
 * **Deliverables:**
+  * **Model Context Protocol (MCP) Server stdio Adapter (`--mcp`):**
+    * Native stdio MCP server enabling Claude Code, Cursor, Windsurf, and Cline to call `git-lineage` directly before modifying legacy code.
+    * Returns deterministic, machine-readable lineage with audit trails, companion tests, and issue rationale directly into agent context windows.
+    * One-command setup: `claude mcp add git-lineage -- git-lineage --mcp`.
   * **Issue Tracker Connectors (Jira & Linear):**
     * In enterprise repos, commits routinely cite Jira/Linear keys (`COLL-7431`, `ENG-1024`) while PRs are squashed, rebased, or missing.
     * Direct REST integration for Jira Cloud/Server (`JIRA_BASE_URL`, `JIRA_API_TOKEN`) and Linear (`LINEAR_API_KEY`).
@@ -95,6 +99,10 @@ v0.1.0 "Genesis"       v0.2.x "Context"            v0.3.0 "Rationale & AST"     
     * Track enclosing syntax nodes (methods, classes, structs, match blocks) rather than fragile spatial line coordinates.
     * Eliminates the "lone line" ambiguity where small syntax lines (closing braces, `trim(e));`) yield variable attribution depending on requested line range.
     * Robust cross-file method relocation tracking beyond Git's heuristic copy detection.
+  * **The 10-Second Comparison Demo:**
+    * High-contrast side-by-side terminal demo (VHS recording) on a well-known open-source repository (e.g. `tokio` or `ripgrep`):
+      * **Left (`git blame`):** Attributes a critical invariant to a generic `style: rustfmt` reformatting commit.
+      * **Right (`git-lineage`):** Traverses past formatting churn, pinpoints original introducing PR/issue rationale, and cites technical discussion.
 
 ---
 
@@ -122,8 +130,6 @@ v0.1.0 "Genesis"       v0.2.x "Context"            v0.3.0 "Rationale & AST"     
     * Official Homebrew tap formula (`brew install nayansrivastav/tap/git-lineage`).
     * Crates.io publication (`cargo install git-lineage`).
     * Prebuilt signed release binaries for macOS (Apple Silicon & Intel) and Linux (x86_64, aarch64).
-  * **Model Context Protocol (MCP) Server:**
-    * Standalone MCP adapter exposing `git-lineage` directly to Cursor, Claude Code, and Cline.
 
 ---
 
@@ -133,6 +139,6 @@ v0.1.0 "Genesis"       v0.2.x "Context"            v0.3.0 "Rationale & AST"     
 | :--- | :--- | :--- | :--- |
 | **v0.1.0** | Core Genesis CLI (`--md`, local git traversal) | — | **Completed** |
 | **v0.2.0 / v0.2.1** | Remote PR enrichment, multi-origin blame, audit trail, `--json`, `--diff` | — | **Completed** |
-| **v0.3.0** | **Jira & Linear connectors**, **Tree-sitter AST tracking** | 1–2 Weeks | **Next (In Planning)** |
+| **v0.3.0** | **MCP Server (`--mcp`)**, **Jira & Linear connectors**, **Tree-sitter AST tracking** | 1–2 Weeks | **Next (In Planning)** |
 | **v0.4.0** | Native `.git-blame-ignore-revs`, `git-lineage audit <dir>` | 1–2 Weeks | Backlog |
-| **v1.0.0** | GitHub Action PR bot, Homebrew Tap, Crates.io, MCP server | 1 Week | Backlog |
+| **v1.0.0** | GitHub Action PR bot, Homebrew Tap, Crates.io | 1 Week | Backlog |
