@@ -2,7 +2,11 @@
 
 <div align="center">
 
-<img src="assets/git-lineage-logo.png" alt="git-lineage logo" width="380" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/git-lineage-logo.svg">
+  <source media="(prefers-color-scheme: light)" srcset="assets/git-lineage-logo-light.svg">
+  <img alt="git-lineage logo" src="assets/git-lineage-logo.png" width="420">
+</picture>
 
 <h3>The Codebase Archaeology CLI and Agent Forensic Primitive</h3>
 
