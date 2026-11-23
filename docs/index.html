@@ -3,8 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>git-lineage — The Codebase Archaeology CLI</title>
-  <meta name="description" content="Uncover why code was written, how it evolved, and the human decisions behind it—without the noise.">
+  <title>git-lineage — The Codebase Archaeology CLI & Agent Forensic Primitive</title>
+  <meta name="description" content="Uncover why code was written, how it evolved, and the human decisions behind it—without the noise. Built for engineers and AI coding agents.">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="shortcut icon" type="image/x-icon" href="favicon.ico">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -60,7 +62,7 @@
 
     /* Hero */
     .hero {
-      padding: 90px 0 60px;
+      padding: 80px 0 50px;
       text-align: center;
       position: relative;
     }
@@ -101,105 +103,184 @@
     .hero p {
       font-size: 1.25rem;
       color: var(--text-dim);
-      max-width: 650px;
+      max-width: 720px;
       margin: 0 auto 36px;
-      font-weight: 400;
+    }
+    .install-box {
+      display: inline-flex;
+      align-items: center;
+      background: #111827;
+      border: 1px solid #374151;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      margin-bottom: 48px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+    .install-box code { color: #38bdf8; margin-right: 16px; }
+    .copy-btn {
+      background: #1f2937;
+      border: 1px solid #374151;
+      color: var(--text-dim);
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: all 0.2s;
+    }
+    .copy-btn:hover { color: #fff; background: #374151; }
+
+    /* Tab Controls */
+    .tab-bar {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .tab-btn {
+      background: #111827;
+      border: 1px solid #1f2937;
+      color: var(--text-dim);
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .tab-btn.active {
+      background: #1e293b;
+      border-color: var(--accent);
+      color: #fff;
     }
 
-    /* Terminal Demo */
+    /* Terminal Showcase */
     .terminal-window {
-      background: #0d1117;
-      border: 1px solid #30363d;
+      background: #0f172a;
+      border: 1px solid #334155;
       border-radius: 12px;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
-      margin: 40px auto 0;
+      max-width: 860px;
+      margin: 0 auto 80px;
       text-align: left;
-      font-family: var(--font-mono);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
       overflow: hidden;
-      max-width: 880px;
     }
     .terminal-header {
-      background: #161b22;
+      background: #1e293b;
       padding: 12px 16px;
       display: flex;
       align-items: center;
       gap: 8px;
-      border-bottom: 1px solid #30363d;
+      border-bottom: 1px solid #334155;
     }
     .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
-    .dot.red { background: #ff5f56; }
-    .dot.yellow { background: #ffbd2e; }
-    .dot.green { background: #27c93f; }
-    .terminal-title { margin-left: 12px; font-size: 0.8rem; color: #8b949e; }
+    .dot.red { background: #ef4444; }
+    .dot.yellow { background: #eab308; }
+    .dot.green { background: #22c55e; }
+    .terminal-title { margin-left: auto; margin-right: auto; font-family: var(--font-mono); font-size: 0.8rem; color: #94a3b8; }
     .terminal-body {
       padding: 24px;
-      font-size: 0.9rem;
-      line-height: 1.7;
-      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      line-height: 1.6;
+      color: #e2e8f0;
+      white-space: pre-wrap;
+      word-break: break-word;
     }
-    .prompt { color: #8b949e; }
-    .cmd { color: #58a6ff; font-weight: 600; }
+    .prompt { color: var(--accent); }
+    .cmd { color: #f8fafc; font-weight: 600; }
     .t-cyan { color: #38bdf8; }
     .t-yellow { color: #facc15; }
     .t-green { color: #4ade80; }
-    .t-magenta { color: #c084fc; }
+    .t-magenta { color: #f472b6; }
     .t-dim { color: #64748b; }
-    .t-white { color: #f8fafc; }
+    .t-white { color: #ffffff; }
 
-    /* Quick Install */
-    .install-box {
-      margin: 50px auto 0;
-      max-width: 550px;
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 8px;
+    /* Agent Section */
+    .agent-section {
+      background: linear-gradient(180deg, rgba(168,85,247,0.06) 0%, transparent 100%);
+      border: 1px solid rgba(168,85,247,0.2);
+      border-radius: 16px;
+      padding: 48px;
+      margin: 0 auto 80px;
+      max-width: 1000px;
+    }
+    .agent-badge {
+      display: inline-block;
+      background: rgba(168,85,247,0.15);
+      border: 1px solid rgba(168,85,247,0.3);
+      color: var(--purple);
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-family: var(--font-mono);
+      margin-bottom: 16px;
+    }
+    .agent-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+      margin-top: 32px;
+      text-align: left;
+    }
+    .agent-card {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 12px;
+      padding: 24px;
+    }
+    .agent-card h4 {
+      font-size: 1.1rem;
+      margin-bottom: 12px;
       display: flex;
       align-items: center;
-      padding: 12px 18px;
-      font-family: var(--font-mono);
+      gap: 8px;
+    }
+    .agent-card p {
+      color: var(--text-dim);
       font-size: 0.95rem;
-      justify-content: space-between;
+      line-height: 1.5;
     }
-    .copy-btn {
-      background: transparent;
-      border: 1px solid #30363d;
-      color: #8b949e;
-      padding: 4px 10px;
-      border-radius: 6px;
-      font-size: 0.8rem;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .copy-btn:hover { color: #fff; border-color: #58a6ff; }
+    .agent-card.danger { border-color: rgba(239,68,68,0.3); }
+    .agent-card.success { border-color: rgba(34,197,94,0.3); }
 
     /* Features Grid */
-    .features { padding: 90px 0; border-top: 1px solid rgba(255,255,255,0.05); }
-    .section-title { text-align: center; font-size: 2rem; margin-bottom: 50px; font-weight: 700; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; }
+    .features { padding: 40px 0 80px; }
+    .section-title { text-align: center; font-size: 2.25rem; font-weight: 700; margin-bottom: 48px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 24px;
+    }
     .card {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
-      padding: 32px;
       border-radius: 12px;
-      transition: border-color 0.2s, transform 0.2s;
+      padding: 28px;
+      transition: transform 0.2s, border-color 0.2s;
     }
-    .card:hover { border-color: rgba(56, 189, 248, 0.4); transform: translateY(-2px); }
-    .card-icon { font-size: 2rem; margin-bottom: 16px; }
-    .card h3 { font-size: 1.25rem; margin-bottom: 10px; }
-    .card p { color: var(--text-dim); font-size: 0.95rem; line-height: 1.6; }
+    .card:hover { transform: translateY(-4px); border-color: #374151; }
+    .card-icon { font-size: 1.75rem; margin-bottom: 16px; }
+    .card h3 { font-size: 1.25rem; font-weight: 600; margin-bottom: 10px; }
+    .card p { color: var(--text-dim); font-size: 0.95rem; }
 
     /* Comparison Table */
-    .compare-section { padding: 80px 0; background: #0c101d; }
-    .table-container { overflow-x: auto; margin-top: 40px; }
-    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.95rem; }
+    .compare-section { padding: 40px 0 80px; background: #0c1220; }
+    .table-container { max-width: 900px; margin: 0 auto; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; text-align: left; }
     th, td { padding: 16px 20px; border-bottom: 1px solid #1f2937; }
-    th { color: var(--text-dim); font-weight: 600; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 0.05em; }
-    td:first-child { font-weight: 500; }
-    .check { color: var(--green); font-weight: bold; }
-    .cross { color: #ef4444; }
+    th { font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); }
+    td { font-size: 0.95rem; }
+    td.check { color: var(--green); font-weight: 600; }
+    td.cross { color: #64748b; }
 
     /* Footer */
     footer { padding: 40px 0; text-align: center; color: var(--text-dim); font-size: 0.9rem; border-top: 1px solid rgba(255,255,255,0.05); }
+    @media (max-width: 768px) {
+      .agent-grid { grid-template-columns: 1fr; }
+      h1 { font-size: 2.5rem; }
+    }
   </style>
 </head>
 <body>
@@ -208,12 +289,14 @@
     <div class="container">
       <nav>
         <a href="#" class="logo">
-          git-lineage <span class="logo-badge">v0.2.0</span>
+          <img src="assets/git-lineage-icon.png" alt="git-lineage icon" height="28" style="vertical-align: middle; border-radius: 6px;">
+          git-lineage <span class="logo-badge">v0.2.1</span>
         </a>
         <div class="nav-links">
+          <a href="#agents">For AI Agents</a>
+          <a href="#confidence-tiers">Confidence Tiers</a>
           <a href="#features">Features</a>
           <a href="#comparison">Why Not Blame?</a>
-          <a href="#install">Install</a>
           <a href="https://github.com/NayanSrivastav/git-lineage" class="btn-github">
             <svg height="18" width="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
             GitHub
@@ -225,13 +308,22 @@
 
   <main>
     <section class="hero container">
+      <div style="margin-bottom: 24px;">
+        <img src="assets/git-lineage-logo.png" alt="git-lineage logo" width="320" style="filter: drop-shadow(0 10px 25px rgba(56, 189, 248, 0.2));">
+      </div>
       <div class="pill">⚡ The Codebase Archaeology CLI & Agent Forensic Primitive</div>
       <h1>Why was this code written?<br>Stop guessing.</h1>
-      <p>Standard <code>git blame</code> stops at formatting and lint commits. <strong>git-lineage</strong> traverses Git history to surface the true introducing commit, PR rationale, and human intent.</p>
+      <p>Standard <code>git blame</code> stops at formatting and lint commits. <strong>git-lineage</strong> traverses Git history to surface the true introducing commit, PR discussions, and reviewer constraints.</p>
 
       <div class="install-box">
-        <code>$ cargo install git-lineage</code>
-        <button class="copy-btn" onclick="navigator.clipboard.writeText('cargo install git-lineage'); this.innerText = 'Copied!'; setTimeout(() => this.innerText = 'Copy', 2000);">Copy</button>
+        <code>$ brew install NayanSrivastav/tap/git-lineage</code>
+        <button class="copy-btn" onclick="navigator.clipboard.writeText('brew install NayanSrivastav/tap/git-lineage'); this.innerText = 'Copied!'; setTimeout(() => this.innerText = 'Copy', 2000);">Copy</button>
+      </div>
+
+      <!-- Tab Toggle -->
+      <div class="tab-bar">
+        <button class="tab-btn active" id="tab-ansi" onclick="showTab('ansi')">Terminal (ANSI)</button>
+        <button class="tab-btn" id="tab-json" onclick="showTab('json')">AI Agent (--json)</button>
       </div>
 
       <div class="terminal-window">
@@ -239,119 +331,230 @@
           <span class="dot red"></span>
           <span class="dot yellow"></span>
           <span class="dot green"></span>
-          <span class="terminal-title">nayan@macbook: ~/projects/payment-service</span>
+          <span class="terminal-title" id="terminal-title">nayan@macbook: ~/projects/payment-service</span>
         </div>
-        <div class="terminal-body">
-          <p><span class="prompt">$</span> <span class="cmd">git lineage src/billing/stripe_webhook.ts:88</span></p>
-          <br>
-          <p class="t-cyan">╭─ Lineage: src/billing/stripe_webhook.ts:88 ───────────────────────────────────────╮</p>
-          <p class="t-cyan">│ <span class="t-dim">›</span> <span class="t-white">if (event.id.startsWith("evt_test_") && payload.attempt > 1) { return 200; }</span> │</p>
-          <p class="t-cyan">╰───────────────────────────────────────────────────────────────────────────────────╯</p>
-          <br>
-          <p>📌 <strong>Genesis (Introducing Commit)</strong></p>
-          <p>&nbsp;&nbsp;&nbsp;Commit:    <span class="t-yellow">e819b2c</span> <span class="t-dim">(2022-04-12, 2 years ago)</span></p>
-          <p>&nbsp;&nbsp;&nbsp;Author:    <span class="t-green">Sarah Chen</span> <span class="t-dim">&lt;sarah@acme.dev&gt;</span></p>
-          <p>&nbsp;&nbsp;&nbsp;PR:        <span class="t-magenta">#412</span>: "Handle duplicate sandbox webhook retries from Stripe API v2"</p>
-          <p>&nbsp;&nbsp;&nbsp;Intent:    <span class="t-white">"Stripe test-mode webhooks retry up to 5x even on 200 in sandbox when fixtures take >2s."</span></p>
-          <br>
-          <p>📜 <strong>Evolution Timeline</strong></p>
-          <p>&nbsp;&nbsp;&nbsp;<span class="t-yellow">★</span> <span class="t-dim">2022-04-12</span>  <span class="t-yellow">e819b2c</span>  <span class="t-magenta">(#412)</span>  Born: Created in `src/legacy/webhooks.ts` by Sarah Chen</p>
-          <p>&nbsp;&nbsp;&nbsp;<span class="t-cyan">●</span> <span class="t-dim">2023-08-19</span>  <span class="t-yellow">904ab12</span>  <span class="t-magenta">(#904)</span>  Moved: Refactored to `src/billing/stripe_webhook.ts`</p>
-          <p>&nbsp;&nbsp;&nbsp;<span class="t-dim">● 2024-02-10  1420ff3  (#1420) Cosmetic: Prettier format pass (ignored)</span></p>
-          <br>
-          <p>🧪 <strong>Evidence &amp; Confidence</strong></p>
-          <p>&nbsp;&nbsp;&nbsp;Related Tests: <span class="t-cyan">tests/billing/stripe_webhook.test.ts</span></p>
-          <p>&nbsp;&nbsp;&nbsp;PR URL:        <span class="t-cyan">https://github.com/acme/payment/pull/412</span></p>
-          <p>&nbsp;&nbsp;&nbsp;Confidence:    <span class="t-green">High (Explicit PR / issue rationale found)</span></p>
+        <div class="terminal-body" id="terminal-content">
+<span class="prompt">$</span> <span class="cmd">git lineage src/billing/stripe_webhook.ts:88</span>
+
+<span class="t-cyan">╭─ Lineage: src/billing/stripe_webhook.ts:88 ───────────────────────────────────────╮</span>
+<span class="t-cyan">│ <span class="t-dim">›</span> <span class="t-white">if (event.id.startsWith("evt_test_") && payload.attempt > 1) { return 200; }</span> │</span>
+<span class="t-cyan">╰───────────────────────────────────────────────────────────────────────────────────╯</span>
+
+📌 <strong>Genesis (Introducing Commit)</strong>
+   Commit:    <span class="t-yellow">e819b2c</span> <span class="t-dim">(2022-04-12, 2 years ago)</span>
+   Author:    <span class="t-green">Sarah Chen</span> <span class="t-dim">&lt;sarah@acme.dev&gt;</span>
+   PR:        <span class="t-magenta">#412</span>: "Handle duplicate sandbox webhook retries from Stripe API v2"
+   Intent:    <span class="t-white">"Stripe test-mode webhooks retry up to 5x even on 200 in sandbox when fixtures take >2s."</span>
+
+📜 <strong>Evolution Timeline</strong>
+   <span class="t-cyan">●</span> <span class="t-dim">2023-08-19</span>  <span class="t-yellow">904ab12</span>  <span class="t-magenta">(#904)</span>  refactor: migrate webhook handlers to billing service
+   <span class="t-yellow">★</span> <span class="t-dim">2022-04-12</span>  <span class="t-yellow">e819b2c</span>  <span class="t-magenta">(#412)</span>  feat: handle duplicate sandbox webhook retries from Stripe API v2
+
+🧪 <strong>Evidence &amp; Confidence</strong>
+   Related Tests: <span class="t-cyan">tests/billing/stripe_webhook.test.ts</span>
+   PR URL:        <span class="t-cyan">https://github.com/acme/payment/pull/412</span>
+   Linked Issues: <span class="t-yellow">#398</span>
+   Review Note:   <span class="t-dim">alex: "Make sure this check only triggers on attempt > 1 so first attempt errors alert."</span>
+   Confidence:    <span class="t-green">High (Explicit PR / reviewer rationale verified)</span>
         </div>
       </div>
     </section>
 
+    <!-- Dedicated AI Agent Section -->
+    <section class="container" id="agents">
+      <div class="agent-section">
+        <span class="agent-badge">🤖 AI Agent Forensic Primitive</span>
+        <h2>Why Autonomous Coding Agents Need Code Provenance</h2>
+        <p style="color: var(--text-dim); max-width: 780px; margin: 12px auto 0;">AI agents like Claude Code, Cursor, Devin, and Codex refactor code based solely on static syntax at <code>HEAD</code>. Without historical context, they strip away defensive constraints and reintroduce resolved production outages.</p>
+
+        <div class="agent-grid">
+          <div class="agent-card danger">
+            <h4><span style="color: #ef4444;">✕</span> Without git-lineage</h4>
+            <p><strong>The Silent Regression Trap:</strong><br>An agent sees an obscure retry check or defensive fallback. Lacking the incident context that created it, the agent considers it "redundant" and deletes it—reintroducing a critical production bug.</p>
+          </div>
+          <div class="agent-card success">
+            <h4><span style="color: #22c55e;">✓</span> With git-lineage (--json)</h4>
+            <p><strong>The Pre-Refactoring Invariant:</strong><br>The agent queries <code>git lineage &lt;file&gt;:&lt;lines&gt; --json</code> before refactoring. It receives the true origin PR discussion, reviewer constraints, and linked issues, safely preserving edge cases.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Dedicated Confidence Scoring Engine Section -->
+    <section class="container" id="confidence-tiers" style="padding: 60px 0;">
+      <h2 class="section-title">Evidence &amp; Confidence Scoring Engine</h2>
+      <p style="text-align: center; color: var(--text-dim); max-width: 780px; margin: -20px auto 40px;">
+        To prevent AI agent hallucinations, <code>git-lineage</code> strictly separates objective historical facts from inferred intent, categorizing evidence into four deterministic confidence tiers.
+      </p>
+
+      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px;">
+        <div class="card" style="border-top: 3px solid #22c55e;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+            <span style="font-weight: 700; color: #22c55e; font-size: 1.1rem;">High</span>
+            <span class="pill" style="margin: 0; padding: 2px 8px; font-size: 0.75rem;">Verified</span>
+          </div>
+          <p><strong>Substantive PR rationale or reviewer decision:</strong></p>
+          <ul style="color: var(--text-dim); font-size: 0.85rem; margin-top: 8px; padding-left: 18px; line-height: 1.5;">
+            <li>Pull Request / MR body description (&gt;20 chars).</li>
+            <li>Substantive technical reviewer note or constraint.</li>
+            <li>Trivial approvals (&quot;LGTM&quot;, &quot;thanks&quot;, &quot;approved&quot;) are filtered out.</li>
+          </ul>
+        </div>
+
+        <div class="card" style="border-top: 3px solid #38bdf8;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+            <span style="font-weight: 700; color: #38bdf8; font-size: 1.1rem;">Medium</span>
+            <span class="pill" style="margin: 0; padding: 2px 8px; font-size: 0.75rem; border-color: rgba(56, 189, 248, 0.3); color: #38bdf8;">Inferred</span>
+          </div>
+          <p><strong>Substantive Git commit description:</strong></p>
+          <ul style="color: var(--text-dim); font-size: 0.85rem; margin-top: 8px; padding-left: 18px; line-height: 1.5;">
+            <li>Commit message extended body (&gt;20 chars).</li>
+            <li>Verified multi-origin block composition where all individual slices are DAG-resolved.</li>
+          </ul>
+        </div>
+
+        <div class="card" style="border-top: 3px solid #eab308;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+            <span style="font-weight: 700; color: #eab308; font-size: 1.1rem;">Low</span>
+            <span class="pill" style="margin: 0; padding: 2px 8px; font-size: 0.75rem; border-color: rgba(234, 179, 8, 0.3); color: #eab308;">Title Only</span>
+          </div>
+          <p><strong>PR title, commit subject, or unverified fallback:</strong></p>
+          <ul style="color: var(--text-dim); font-size: 0.85rem; margin-top: 8px; padding-left: 18px; line-height: 1.5;">
+            <li>Single-line commit summary or PR title without detailed rationale.</li>
+            <li>Unverified DAG fallback where line evolution fell back to current blame commit.</li>
+            <li>Multi-origin blocks where one or more slices used fallback provenance.</li>
+          </ul>
+        </div>
+
+        <div class="card" style="border-top: 3px solid #94a3b8;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+            <span style="font-weight: 700; color: #94a3b8; font-size: 1.1rem;">None</span>
+            <span class="pill" style="margin: 0; padding: 2px 8px; font-size: 0.75rem; border-color: rgba(148, 163, 184, 0.3); color: #94a3b8;">Unrecorded</span>
+          </div>
+          <p><strong>Zero rationale recorded:</strong></p>
+          <ul style="color: var(--text-dim); font-size: 0.85rem; margin-top: 8px; padding-left: 18px; line-height: 1.5;">
+            <li>No explanation recorded in commit message or review history.</li>
+            <li>Explicitly communicated to agents to prevent hallucination.</li>
+          </ul>
+        </div>
+      </div>
+      <p style="text-align: center; color: var(--text-dim); font-size: 0.85rem; max-width: 780px; margin: 25px auto 0;">
+        💡 <em>Note on Review Comments:</em> Technical reviewer comment classification uses a heuristic noise-reduction filter (minimum length &amp; generic approval exclusion such as LGTM, +1, thanks) to surface actionable engineering rationale rather than formal semantic verification.
+      </p>
+    </section>
+
     <section class="features container" id="features">
-      <h2 class="section-title">Built for High-Velocity Engineering</h2>
+      <h2 class="section-title">Built for High-Velocity Engineering & AI Tooling</h2>
       <div class="grid">
         <div class="card">
           <div class="card-icon">🎯</div>
           <h3>True Origin Detection</h3>
-          <p>Automatically filters out whitespace commits, automated lint passes, and renames to isolate the true introducing commit.</p>
+          <p>Iteratively traverses parent commits through the Git DAG, skipping formatting deltas and tracking code across moves and renames.</p>
         </div>
         <div class="card">
-          <div class="card-icon">💬</div>
-          <h3>PR &amp; Discussion Context</h3>
-          <p>Resolves commit hashes to Pull Requests, issue discussions, and review comments via your local GitHub/GitLab CLI credentials.</p>
+          <div class="card-icon">🧩</div>
+          <h3>Multi-Origin Dissection</h3>
+          <p>Dissects multi-line code ranges into distinct originating commit slices rather than falsely attributing the entire block to a single commit.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🌐</div>
+          <h3>Multi-Platform Remote Support</h3>
+          <p>Native context enrichment across <strong>GitHub</strong>, <strong>GitLab</strong>, and <strong>Bitbucket</strong>—mining merged PRs, inline review comments, and commit trailers with 100% offline fallback.</p>
         </div>
         <div class="card">
           <div class="card-icon">🤖</div>
-          <h3>Agent Forensic Primitive</h3>
-          <p>Exports high-density structured JSON (<code>--json</code>) so AI agents like Claude Code, Cursor, and Devin don't break legacy edge cases.</p>
+          <h3>Machine-Readable for Agents</h3>
+          <p>Exports deterministic, structured JSON (<code>--json</code>) separating verifiable facts from inferences, preventing LLM hallucinations.</p>
         </div>
         <div class="card">
           <div class="card-icon">🧪</div>
           <h3>Companion Test Matcher</h3>
-          <p>Automatically locates the companion test files covering the legacy code you are investigating.</p>
+          <p>Heuristically identifies associated test suites exercising the legacy code you are investigating.</p>
         </div>
         <div class="card">
           <div class="card-icon">🔒</div>
           <h3>100% Local &amp; Private</h3>
-          <p>Operates entirely on your local Git repository. Zero telemetry, zero external cloud dependencies, zero data leaks.</p>
-        </div>
-        <div class="card">
-          <div class="card-icon">⚡</div>
-          <h3>Sub-second Speed</h3>
-          <p>Engineered in Rust for instant terminal responses (<300ms) even on repos with over 100,000 commits.</p>
+          <p>Runs entirely inside your local terminal with zero telemetry, zero analytics, and zero cloud server dependencies.</p>
         </div>
       </div>
     </section>
 
     <section class="compare-section" id="comparison">
       <div class="container">
-        <h2 class="section-title">Why Standard Tools Fall Short</h2>
+        <h2 class="section-title">The Archaeological Matrix: How vs. Why</h2>
+        <p style="text-align: center; color: var(--text-dim); max-width: 780px; margin: -16px auto 32px;">
+          <code>git log -L</code> shows <strong>how</strong> code mutated over time with raw diffs. <strong>git-lineage</strong> answers <strong>why</strong> code was introduced by linking Git commits to PR descriptions, reviewer debates, and Jira tickets.
+        </p>
         <div class="table-container">
           <table>
             <thead>
               <tr>
                 <th>Capability</th>
-                <th>git blame</th>
-                <th>GitLens</th>
+                <th>git log -L (Git)</th>
+                <th>git blame + API script</th>
                 <th>git-lineage</th>
               </tr>
             </thead>
             <tbody>
               <tr>
+                <td><strong>Primary Question</strong></td>
+                <td>"How did code change?"</td>
+                <td>"Who touched this line?"</td>
+                <td class="check"><strong>"Why does code exist?"</strong></td>
+              </tr>
+              <tr>
                 <td>Bypasses formatting &amp; Prettier noise</td>
-                <td class="cross">✕</td>
-                <td class="cross">Partial</td>
-                <td class="check">✓ Automatic</td>
+                <td class="cross">Manual diff check</td>
+                <td class="cross">✕ Stops at formatting</td>
+                <td class="check">✓ Automatic DAG walk (-w)</td>
               </tr>
               <tr>
-                <td>Follows code across file renames</td>
-                <td class="cross">✕</td>
-                <td class="cross">✕</td>
-                <td class="check">✓ Automatic</td>
+                <td>PR / MR Context &amp; Intent</td>
+                <td class="cross">✕ None (Local Git only)</td>
+                <td class="cross">✕ Often wrong PR</td>
+                <td class="check">✓ Validated ticket &amp; branch match</td>
               </tr>
               <tr>
-                <td>Terminal ANSI &amp; Markdown exports</td>
-                <td class="cross">✕</td>
-                <td class="cross">✕</td>
-                <td class="check">✓ Built-in</td>
+                <td>Substantive Reviewer Rationale</td>
+                <td class="cross">✕ None</td>
+                <td class="cross">✕ Comment noise</td>
+                <td class="check">✓ Filtered technical decisions</td>
               </tr>
               <tr>
-                <td>Companion test detection</td>
-                <td class="cross">✕</td>
-                <td class="cross">✕</td>
-                <td class="check">✓ Built-in</td>
+                <td>Multi-Origin Block Dissection</td>
+                <td class="cross">Raw diff hunks</td>
+                <td class="cross">✕ Blames entire block to 1 SHA</td>
+                <td class="check">✓ Per-line genesis attribution</td>
+              </tr>
+              <tr>
+                <td>Unified Diff Inspection</td>
+                <td class="check">✓ Built-in diffs</td>
+                <td class="cross">✕ Manual git show</td>
+                <td class="check">✓ Optional --diff (-p) flag</td>
+              </tr>
+              <tr>
+                <td>Function-Level Targeting</td>
+                <td class="check">✓ -L :func:file</td>
+                <td class="cross">✕ Line numbers only</td>
+                <td class="check">✓ file:func or -L :func:file</td>
               </tr>
               <tr>
                 <td>Machine-readable for AI agents</td>
-                <td class="cross">✕</td>
-                <td class="cross">✕</td>
-                <td class="check">✓ JSON / MCP</td>
+                <td class="cross">✕ 1,000s of diff tokens</td>
+                <td class="cross">✕ Unstructured</td>
+                <td class="check">✓ &lt;500 tokens structured JSON</td>
               </tr>
               <tr>
-                <td>Runtime Overhead</td>
-                <td>None</td>
-                <td>Heavy (Electron)</td>
-                <td><strong>None (Single binary)</strong></td>
+                <td>Deterministic Confidence Tiers</td>
+                <td class="cross">✕ None</td>
+                <td class="cross">✕ None</td>
+                <td class="check">✓ High, Medium, Low, None</td>
+              </tr>
+              <tr>
+                <td>Air-Gapped / Offline Fallback</td>
+                <td class="check">✓ Built-in</td>
+                <td class="cross">✕ Requires API</td>
+                <td class="check">✓ Universal commit trailers</td>
               </tr>
             </tbody>
           </table>
@@ -366,5 +569,76 @@
     </div>
   </footer>
 
+  <script>
+    const ansiContent = `<span class="prompt">$</span> <span class="cmd">git lineage src/billing/stripe_webhook.ts:88</span>
+
+<span class="t-cyan">╭─ Lineage: src/billing/stripe_webhook.ts:88 ───────────────────────────────────────╮</span>
+<span class="t-cyan">│ <span class="t-dim">›</span> <span class="t-white">if (event.id.startsWith("evt_test_") && payload.attempt > 1) { return 200; }</span> │</span>
+<span class="t-cyan">╰───────────────────────────────────────────────────────────────────────────────────╯</span>
+
+📌 <strong>Genesis (Introducing Commit)</strong>
+   Commit:    <span class="t-yellow">e819b2c</span> <span class="t-dim">(2022-04-12, 2 years ago)</span>
+   Author:    <span class="t-green">Sarah Chen</span> <span class="t-dim">&lt;sarah@acme.dev&gt;</span>
+   PR:        <span class="t-magenta">#412</span>: "Handle duplicate sandbox webhook retries from Stripe API v2"
+   Intent:    <span class="t-white">"Stripe test-mode webhooks retry up to 5x even on 200 in sandbox when fixtures take >2s."</span>
+
+📜 <strong>Evolution Timeline</strong>
+   <span class="t-cyan">●</span> <span class="t-dim">2023-08-19</span>  <span class="t-yellow">904ab12</span>  <span class="t-magenta">(#904)</span>  refactor: migrate webhook handlers to billing service
+   <span class="t-yellow">★</span> <span class="t-dim">2022-04-12</span>  <span class="t-yellow">e819b2c</span>  <span class="t-magenta">(#412)</span>  feat: handle duplicate sandbox webhook retries from Stripe API v2
+
+🧪 <strong>Evidence &amp; Confidence</strong>
+   Related Tests: <span class="t-cyan">tests/billing/stripe_webhook.test.ts</span>
+   PR URL:        <span class="t-cyan">https://github.com/acme/payment/pull/412</span>
+   Linked Issues: <span class="t-yellow">#398</span>
+   Review Note:   <span class="t-dim">alex: "Make sure this check only triggers on attempt > 1 so first attempt errors alert."</span>
+   Confidence:    <span class="t-green">High (Explicit PR / reviewer rationale verified)</span>`;
+
+    const jsonContent = `<span class="prompt">$</span> <span class="cmd">git lineage src/billing/stripe_webhook.ts:88 --json</span>
+
+<span class="t-dim">{</span>
+  <span class="t-cyan">"file_path"</span>: <span class="t-green">"src/billing/stripe_webhook.ts"</span>,
+  <span class="t-cyan">"line_range"</span>: <span class="t-green">"88"</span>,
+  <span class="t-cyan">"genesis_commit"</span>: <span class="t-dim">{</span>
+    <span class="t-cyan">"sha"</span>: <span class="t-yellow">"e819b2c8d23fa89b21a81234901f4c78129034aa"</span>,
+    <span class="t-cyan">"short_sha"</span>: <span class="t-yellow">"e819b2c"</span>,
+    <span class="t-cyan">"author_name"</span>: <span class="t-green">"Sarah Chen"</span>,
+    <span class="t-cyan">"author_email"</span>: <span class="t-dim">"sarah@acme.dev"</span>,
+    <span class="t-cyan">"author_date"</span>: <span class="t-dim">"2022-04-12 14:22:10"</span>,
+    <span class="t-cyan">"subject"</span>: <span class="t-white">"feat: handle duplicate sandbox webhook retries from Stripe API v2"</span>
+  <span class="t-dim">}</span>,
+  <span class="t-cyan">"origins"</span>: <span class="t-dim">[</span>
+    <span class="t-dim">{</span> <span class="t-cyan">"line_start"</span>: <span class="t-yellow">88</span>, <span class="t-cyan">"line_end"</span>: <span class="t-yellow">88</span>, <span class="t-cyan">"genesis_sha"</span>: <span class="t-yellow">"e819b2c..."</span> <span class="t-dim">}</span>
+  <span class="t-dim">]</span>,
+  <span class="t-cyan">"pr_details"</span>: <span class="t-dim">{</span>
+    <span class="t-cyan">"number"</span>: <span class="t-yellow">412</span>,
+    <span class="t-cyan">"title"</span>: <span class="t-white">"Handle duplicate sandbox webhook retries from Stripe API v2"</span>,
+    <span class="t-cyan">"reviewer_highlights"</span>: <span class="t-dim">[</span>
+      <span class="t-white">"alex: \\"Make sure this check only triggers on attempt > 1 so first attempt errors alert.\\""</span>
+    <span class="t-dim">]</span>,
+    <span class="t-cyan">"linked_issues"</span>: <span class="t-dim">[</span><span class="t-yellow">"#398"</span><span class="t-dim">]</span>
+  <span class="t-dim">}</span>,
+  <span class="t-cyan">"confidence"</span>: <span class="t-green">"explicit"</span>,
+  <span class="t-cyan">"related_tests"</span>: <span class="t-dim">[</span><span class="t-cyan">"tests/billing/stripe_webhook.test.ts"</span><span class="t-dim">]</span>
+<span class="t-dim">}</span>`;
+
+    function showTab(type) {
+      const btnAnsi = document.getElementById('tab-ansi');
+      const btnJson = document.getElementById('tab-json');
+      const content = document.getElementById('terminal-content');
+      const title = document.getElementById('terminal-title');
+
+      if (type === 'json') {
+        btnJson.classList.add('active');
+        btnAnsi.classList.remove('active');
+        content.innerHTML = jsonContent;
+        title.innerText = 'claude-code / cursor: tool_call git_lineage';
+      } else {
+        btnAnsi.classList.add('active');
+        btnJson.classList.remove('active');
+        content.innerHTML = ansiContent;
+        title.innerText = 'nayan@macbook: ~/projects/payment-service';
+      }
+    }
+  </script>
 </body>
 </html>

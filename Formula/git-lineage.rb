@@ -7,22 +7,30 @@ class GitLineage < Formula
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/NayanSrivastav/git-lineage/releases/download/v0.2.1/git-lineage-v0.2.1-aarch64-apple-darwin.tar.gz"
-      # sha256 "<checksum_will_be_populated_on_asset_upload>"
+      sha256 "d04bbd3bcb8a21dc0b7bbac040e7ec3ac08640b98cc36a40878e397bd46d21f4"
+
+      def install
+        bin.install "git-lineage"
+      end
     else
-      url "https://github.com/NayanSrivastav/git-lineage/releases/download/v0.2.1/git-lineage-v0.2.1-x86_64-apple-darwin.tar.gz"
-      # sha256 "<checksum_will_be_populated_on_asset_upload>"
+      url "https://github.com/NayanSrivastav/git-lineage/archive/refs/tags/v0.2.1.tar.gz"
+      sha256 "c288f28a85d02de05a1b18d1e4860c993981c462b7835ba4285c2f927f357560"
+      depends_on "rust" => :build
+
+      def install
+        system "cargo", "install", *std_cargo_args
+      end
     end
   end
 
   on_linux do
-    if Hardware::CPU.intel?
-      url "https://github.com/NayanSrivastav/git-lineage/releases/download/v0.2.1/git-lineage-v0.2.1-x86_64-unknown-linux-musl.tar.gz"
-      # sha256 "<checksum_will_be_populated_on_asset_upload>"
-    end
-  end
+    url "https://github.com/NayanSrivastav/git-lineage/archive/refs/tags/v0.2.1.tar.gz"
+    sha256 "c288f28a85d02de05a1b18d1e4860c993981c462b7835ba4285c2f927f357560"
+    depends_on "rust" => :build
 
-  def install
-    bin.install "git-lineage"
+    def install
+      system "cargo", "install", *std_cargo_args
+    end
   end
 
   test do
