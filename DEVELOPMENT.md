@@ -1,6 +1,6 @@
-# Development Guide: git-lineage
+# Development Guide: cynn
 
-This guide provides technical instructions for developing, testing, and profiling `git-lineage`.
+This guide provides technical instructions for developing, testing, and profiling `cynn`.
 
 ---
 
@@ -18,23 +18,24 @@ rustup component add rustfmt clippy
 
 ---
 
-## 2. Running Locally as a Git Subcommand
+## 2. Running Locally as a Git Subcommand or Standalone CLI
 
-Git automatically detects any executable in your `$PATH` named `git-<name>` and allows invoking it as `git <name>`.
+`cynn` can be invoked directly as `cynn` or as a Git subcommand `git cynn`. Git automatically detects any executable in your `$PATH` named `git-<name>` and allows invoking it as `git <name>`.
 
-To test `git lineage` against local repos while developing:
+To test `cynn` / `git cynn` against local repos while developing:
 
 ```bash
-# In the git-lineage directory:
+# In the cynn directory:
 cargo build
 
-# Create a symlink to cargo's debug binary in your local bin or path
-ln -sf $(pwd)/target/debug/git-lineage /usr/local/bin/git-lineage
-# or in ~/.cargo/bin
-ln -sf $(pwd)/target/debug/git-lineage ~/.cargo/bin/git-lineage
+# Create symlinks to cargo's debug binary in your local bin or path
+ln -sf $(pwd)/target/debug/cynn ~/.cargo/bin/cynn
+ln -sf $(pwd)/target/debug/git-cynn ~/.cargo/bin/git-cynn
 
 # Now run it anywhere:
-git lineage src/main.rs:1
+cynn src/main.rs:1
+# or
+git cynn src/main.rs:1
 ```
 
 ---
@@ -55,21 +56,21 @@ Integration tests in `tests/` spin up programmatic Git repositories using the `t
 
 Run integration tests:
 ```bash
-cargo test --test integration
+cargo test --test genesis_test
 ```
 
 ---
 
 ## 4. Benchmarking & Performance Budgets
 
-`git-lineage` has a strict performance budget: **<300ms** for line queries in repositories with up to 100,000 commits.
+`cynn` has a strict performance budget: **<300ms** for line queries in repositories with up to 100,000 commits.
 
 We use [`hyperfine`](https://github.com/sharkdp/hyperfine) for benchmarking:
 
 ```bash
-# Compare git-lineage with raw git blame
+# Compare cynn with raw git blame
 hyperfine --warmup 3 \
-  'git lineage src/main.rs:50' \
+  'cynn src/main.rs:50' \
   'git blame -L 50,50 src/main.rs'
 ```
 

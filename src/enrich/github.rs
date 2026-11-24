@@ -198,7 +198,7 @@ pub fn fetch_github_pr_api(
     let list_url = format!("https://api.github.com/repos/{owner_repo}/commits/{commit_sha}/pulls");
     let Ok(mut res) = ureq::get(&list_url)
         .header("Authorization", &format!("Bearer {token}"))
-        .header("User-Agent", "git-lineage")
+        .header("User-Agent", "cynn")
         .header("Accept", "application/vnd.github+json")
         .call()
     else {
@@ -289,7 +289,7 @@ pub fn fetch_github_pr_api(
         );
         let Ok(mut rev_res) = ureq::get(&reviews_url)
             .header("Authorization", &format!("Bearer {token}"))
-            .header("User-Agent", "git-lineage")
+            .header("User-Agent", "cynn")
             .header("Accept", "application/vnd.github+json")
             .call()
         else {
@@ -336,7 +336,7 @@ pub fn fetch_github_pr_api(
         );
         let Ok(mut com_res) = ureq::get(&comments_url)
             .header("Authorization", &format!("Bearer {token}"))
-            .header("User-Agent", "git-lineage")
+            .header("User-Agent", "cynn")
             .header("Accept", "application/vnd.github+json")
             .call()
         else {

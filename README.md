@@ -1,26 +1,28 @@
-# git-lineage
+# cynn
 
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/git-lineage-logo.svg">
-  <source media="(prefers-color-scheme: light)" srcset="assets/git-lineage-logo-light.svg">
-  <img alt="git-lineage logo" src="assets/git-lineage-logo.png" width="420">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/cynn-logo.svg">
+  <source media="(prefers-color-scheme: light)" srcset="assets/cynn-logo-light.svg">
+  <img alt="cynn logo" src="assets/cynn-logo.svg" width="380">
 </picture>
 
 <h3>The Codebase Archaeology CLI and Agent Forensic Primitive</h3>
 
 <p>
-  <strong>Uncover why code was written, how it evolved, and the human decisions behind it—without the noise.</strong>
+  <strong>Don't just blame it, trace its cynn.</strong><br>
+  <em>Old English <strong>cynn</strong> (/kɪn/) — lineage, descent, ancestral origin.</em>
 </p>
 
-[![CI](https://github.com/NayanSrivastav/git-lineage/actions/workflows/ci.yml/badge.svg)](https://github.com/NayanSrivastav/git-lineage/actions)
+[![Crates.io](https://img.shields.io/crates/v/cynn.svg)](https://crates.io/crates/cynn)
+[![CI](https://github.com/NayanSrivastav/cynn/actions/workflows/ci.yml/badge.svg)](https://github.com/NayanSrivastav/cynn/actions)
 [![Rust](https://img.shields.io/badge/rust-1.78%2B-orange.svg)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 [Quickstart](#quickstart) •
-[Why AI Agents Need Lineage](#why-ai-agents-need-code-provenance) •
+[Why AI Agents Need cynn](#why-ai-agents-need-historical-provenance) •
 [Why Not `git blame`?](#why-not-git-blame) •
 [Features](#features) •
 [Architecture](#architecture) •
@@ -70,19 +72,21 @@ However, **code without history is an incomplete prompt**:
 * Standard unit tests often fail to catch these edge cases because the regression only manifests under rare production constraints.
 
 > **The Pre-Refactoring Safety Invariant:**  
-> Before modifying or deleting legacy code, an agent must query `git-lineage` to uncover the historical constraints, linked issues, and reviewer decisions that brought that code into existence.
+> Before modifying or deleting legacy code, an agent must query `cynn` to uncover the historical constraints, linked issues, and reviewer decisions that brought that code into existence.
 
 ---
 
-## The Solution: `git lineage`
+## The Solution: `cynn` (or `git cynn`)
 
-Run `git-lineage` directly on the file and line:
+Run `cynn` directly on the file and line:
 
 ```bash
-git lineage src/billing/stripe_webhook.ts:88
+cynn src/billing/stripe_webhook.ts:88
+# or
+git cynn src/billing/stripe_webhook.ts:88
 ```
 
-Within **sub-second time**, `git-lineage` traverses parent commits, tracks code across moves and renames, correlates the true commit with GitHub PR discussions, and outputs an archaeological dossier:
+Within **sub-second time**, `cynn` traverses parent commits, tracks code across moves and renames, correlates the true commit with GitHub PR discussions, and outputs an archaeological dossier:
 
 ```text
 ╭─ Lineage: src/billing/stripe_webhook.ts:88 ───────────────────────────────────────╮
@@ -112,17 +116,17 @@ Within **sub-second time**, `git-lineage` traverses parent commits, tracks code 
 
 ---
 
-## The Archaeological Matrix: `git log -L` vs. `git blame + gh/glab` vs. `git-lineage`
+## The Archaeological Matrix: `git log -L` vs. `git blame + gh/glab` vs. `cynn`
 
-Developers frequently ask: *"How does `git-lineage` compare to `git log -L` and standard `git blame`?"*
+Developers frequently ask: *"How does `cynn` compare to `git log -L` and standard `git blame`?"*
 
 The short answer:
 * **`git log -L` answers: "How did this code mutate over time?"**  
   Built into Git and operates strictly offline. Shows the line-by-line before/after diff for every change touching a range or function.
-* **`git-lineage` answers: "Why does this code exist, and what was the intent?"**  
+* **`cynn` answers: "Why does this code exist, and what was the intent?"**  
   Crosses the Git boundary into remote code review platforms. Follows past reformatting noise to the introducing genesis commit, surfaces PR/MR descriptions, reviewer rationale, and linked Jira tickets, and produces deterministic, token-efficient JSON for AI agents.
 
-| Capability | `git log -L` (Built-in Git) | `git blame` + `glab`/`gh` script | `git-lineage` |
+| Capability | `git log -L` (Built-in Git) | `git blame` + `glab`/`gh` script | `cynn` |
 | :--- | :---: | :---: | :---: |
 | **Primary Question** | "How did code change?" | "Who touched this line?" | **"Why does this code exist?"** |
 | **Data Scope** | Local commits only | Local commit + naive remote API | **Local DAG + PRs, Reviews, Tickets & Discussions** |
@@ -144,22 +148,23 @@ The short answer:
 #### macOS (Homebrew)
 ```bash
 brew tap nayansrivastav/tap
-brew install git-lineage
+brew install cynn
 ```
 
 #### Linux & macOS (Universal Script)
 ```bash
-curl -fsSL https://raw.githubusercontent.com/NayanSrivastav/git-lineage/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/NayanSrivastav/cynn/main/install.sh | sh
 ```
 
-#### From Source (Rust toolchain)
+#### From Crates.io (Cargo)
 ```bash
-cargo install git-lineage
+cargo install cynn
 ```
+*(Installs both `cynn` and `git-cynn` commands into your Cargo bin directory).*
 
 ### Authentication & Remote Enrichment
 
-`git-lineage` enriches historical commits with PR/MR titles, descriptions, inline review comments, and linked issues. It supports both **Direct HTTPS REST APIs** (zero CLI binaries required) and **local CLI sessions**:
+`cynn` enriches historical commits with PR/MR titles, descriptions, inline review comments, and linked issues. It supports both **Direct HTTPS REST APIs** (zero CLI binaries required) and **local CLI sessions**:
 
 | Platform | Environment Variable | CLI Fallback |
 | :--- | :--- | :--- |
@@ -167,29 +172,32 @@ cargo install git-lineage
 | **GitLab** | `export GITLAB_TOKEN="<pat>"` or `GL_TOKEN` | `glab auth login` |
 | **Bitbucket** | `export BITBUCKET_TOKEN="<app-password>"` | Offline commit trailers |
 
-* **Zero-Config CLI Detection:** If you are already logged in via `gh` or `glab`, `git-lineage` automatically detects your credentials and config files (`glab-cli/config.yml`) with zero manual setup.
-* **Offline & Air-gapped Fallback:** If no token or CLI is configured, `git-lineage` seamlessly falls back to universal Git commit trailers (`See merge request !123`, `Merged in ... (pull request #42)`) with zero network dependencies.
+* **Zero-Config CLI Detection:** If you are already logged in via `gh` or `glab`, `cynn` automatically detects your credentials and config files (`glab-cli/config.yml`) with zero manual setup.
+* **Offline & Air-gapped Fallback:** If no token or CLI is configured, `cynn` seamlessly falls back to universal Git commit trailers (`See merge request !123`, `Merged in ... (pull request #42)`) with zero network dependencies.
 
 ### Basic Commands
 
 ```bash
 # Trace a specific line
-git lineage src/billing/stripe_webhook.ts:88
+cynn src/billing/stripe_webhook.ts:88
+
+# Or invoke as a native Git subcommand
+git cynn src/billing/stripe_webhook.ts:88
 
 # Trace a block of lines
-git lineage src/billing/stripe_webhook.ts:80-120
+cynn src/billing/stripe_webhook.ts:80-120
 
 # Trace a named function or method across file shifts
-git lineage src/billing/stripe_webhook.ts:handleWebhook
+cynn src/billing/stripe_webhook.ts:handleWebhook
 
 # Include the introducing unified diff patch directly
-git lineage src/billing/stripe_webhook.ts:88 --diff
+cynn src/billing/stripe_webhook.ts:88 --diff
 
 # Export clean Markdown for PR reviews or discussions
-git lineage src/billing/stripe_webhook.ts:88 --md
+cynn src/billing/stripe_webhook.ts:88 --md
 
 # Machine-readable JSON output for AI agents
-git lineage src/billing/stripe_webhook.ts:88 --json
+cynn src/billing/stripe_webhook.ts:88 --json
 ```
 
 ---
@@ -197,10 +205,10 @@ git lineage src/billing/stripe_webhook.ts:88 --json
 ## Features
 
 ### 1. True Genesis Detection & DAG Traversal
-Standard `git blame` stops at the most recent commit touching a line. `git-lineage` traverses parent commits backward through the Git revision DAG, ignoring whitespace deltas (`-w`), mass code formatting commits, and file moves (`-C`, `-M`) until it isolates the **true introducing commit**.
+Standard `git blame` stops at the most recent commit touching a line. `cynn` traverses parent commits backward through the Git revision DAG, ignoring whitespace deltas (`-w`), mass code formatting commits, and file moves (`-C`, `-M`) until it isolates the **true introducing commit**.
 
 ### 2. Multi-Origin Block Dissection
-When querying a multi-line range, different lines frequently originate from different commits. Rather than falsely attributing the entire block to line 1's commit, `git-lineage` dissects the block into contiguous slices and reports the genesis commit for each slice:
+When querying a multi-line range, different lines frequently originate from different commits. Rather than falsely attributing the entire block to line 1's commit, `cynn` dissects the block into contiguous slices and reports the genesis commit for each slice:
 ```text
 🧩 Multi-Origin Range (2 distinct introducing commits):
    Lines 80-85: 5b2004f by Sarah Chen (2 years ago) — "introduce sandbox guard"
@@ -208,25 +216,25 @@ When querying a multi-line range, different lines frequently originate from diff
 ```
 
 ### 3. Multi-Platform Remote Support (GitHub, GitLab, Bitbucket & Generic Git)
-Code commits record *what* changed; code review platforms record *why*. `git-lineage` inspects your repository's remote origin and enriches the historical dossier using the appropriate platform provider:
-* **GitHub (`github.com`)**: Discovers merged, closed, and active PRs associated with historical commits via `gh pr list --state all`. Surfaces PR descriptions, conversation comments, inline code review thread comments, and linked issues.
-* **GitLab (`gitlab.com` & Self-Hosted)**: Mines GitLab Merge Requests via `glab mr list` and resolves standard GitLab commit trailers (`See merge request !123`).
+Code commits record *what* changed; code review platforms record *why*. `cynn` inspects your repository's remote origin and enriches the historical dossier using the appropriate platform provider:
+* **GitHub (`github.com`)**: Discovers merged, closed, and active PRs associated with historical commits via `gh pr list --state all` or REST API. Surfaces PR descriptions, conversation comments, inline code review thread comments, and linked issues.
+* **GitLab (`gitlab.com` & Self-Hosted)**: Mines GitLab Merge Requests via `glab mr list` or REST API and resolves standard GitLab commit trailers (`See merge request !123`).
 * **Bitbucket (`bitbucket.org` & Data Center)**: Resolves Bitbucket Pull Requests and approvals via native merge commit trailers (`Merged in branch (pull request #123)`).
 * **Generic / Air-Gapped Git**: Operates 100% offline without network calls or API credentials by parsing universal commit trailers (`#123`, `!123`, `PR-123`).
 
 ### 4. Zero-Hallucination Confidence Engine
-For AI agents and human auditors, distinguishing hard verified historical evidence from heuristic inference is critical. `git-lineage` deterministically classifies confidence into a four-tier verification hierarchy:
+For AI agents and human auditors, distinguishing hard verified historical evidence from heuristic inference is critical. `cynn` deterministically classifies confidence into a four-tier verification hierarchy:
 
 | Tier | Deterministic Criteria | Typical Evidence |
 | :--- | :--- | :--- |
 | **`High`** | Substantive PR / MR description (>20 chars) or verified technical reviewer decision. | Pull request description, inline review discussion, or reviewer approval note. |
 | **`Medium`** | Substantive Git commit description (>20 chars) or verified multi-origin composition. | Multi-line commit body or distinct multi-origin slice boundaries (all slices DAG-verified). |
 | **`Low`** | PR / MR title, single-line commit subject only, or unverified DAG fallback. | Single-line commit summary or merge message without extended rationale, or fallback to HEAD blame. |
-| **`None`** | Zero rationale recorded in history. | Bare commits without explanations. **`git-lineage` never hallucinates or invents reasons.** |
+| **`None`** | Zero rationale recorded in history. | Bare commits without explanations. **`cynn` never hallucinates or invents reasons.** |
 
 > 💡 **Heuristic Noise Filtering:** Technical reviewer comment classification uses a heuristic noise-reduction filter (minimum length & generic phrase suppression like LGTM, +1, thanks) to surface actionable engineering rationale rather than formal semantic verification.
 
-📖 *Learn more in the [Evidence & Confidence Documentation](https://nayansrivastav.github.io/git-lineage/#confidence-tiers).*
+📖 *Learn more in the [Evidence & Confidence Documentation](https://nayansrivastav.github.io/cynn/#confidence-tiers).*
 
 ---
 
@@ -235,7 +243,7 @@ For AI agents and human auditors, distinguishing hard verified historical eviden
 AI coding agents use the `--json` flag to retrieve deterministic, structured provenance before modifying code:
 
 ```bash
-git lineage src/billing/stripe_webhook.ts:88 --json
+cynn src/billing/stripe_webhook.ts:88 --json
 ```
 
 ### Structured Output Schema
@@ -281,7 +289,7 @@ git lineage src/billing/stripe_webhook.ts:88 --json
   },
   "intent_summary": "Handle duplicate sandbox webhook retries from Stripe API v2: Stripe test-mode webhooks retry up to 5x...",
   "confidence": "High",
-  "confidence_docs": "https://nayansrivastav.github.io/git-lineage/#confidence-tiers",
+  "confidence_docs": "https://nayansrivastav.github.io/cynn/#confidence-tiers",
   "fallback_used": false,
   "enrichment_status": "enriched",
   "related_tests": ["tests/billing/stripe_webhook.test.ts"],

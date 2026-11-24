@@ -1,6 +1,6 @@
 # GEMINI.md: Project Development Guidelines & Standards
 
-This document establishes the official engineering guidelines, architectural invariants, and code standards for `git-lineage`. All AI pair programmers and human contributors must adhere to these standards from Day 1.
+This document establishes the official engineering guidelines, architectural invariants, and code standards for `cynn`. All AI pair programmers and human contributors must adhere to these standards from Day 1.
 
 ---
 
@@ -9,13 +9,13 @@ This document establishes the official engineering guidelines, architectural inv
 1. **Production-Grade Engineering:**  
    Every line of code must adhere to production-ready standards. No temporary hacks, no hardcoded magic paths, and no suppressed compiler warnings.
 2. **Deterministic & Truthful (Zero Hallucination):**  
-   The core value of `git-lineage` is trust. If a commit has no PR, or a commit message is blank, explicitly output `[No rationale recorded]`. Never invent, guess, or extrapolate developer intent.
+   The core value of `cynn` is trust. If a commit has no PR, or a commit message is blank, explicitly output `[No rationale recorded]`. Never invent, guess, or extrapolate developer intent.
 3. **Local-First & Offline Resilience:**  
    The core engine must run 100% offline against local Git repositories. Remote calls (GitHub/GitLab) must be strictly optional enhancements that fail gracefully without crashing.
 4. **Sub-second Performance Budget:**  
    Line-level queries must return in **<300ms**. Avoid unnecessary Git packfile parsing, redundant object lookups, or unbuffered I/O.
 5. **No Telemetry or Phone-Home:**  
-   `git-lineage` operates on private corporate codebases. It must never transmit user code, commit hashes, or telemetry over the network.
+   `cynn` operates on private corporate codebases. It must never transmit user code, commit hashes, or telemetry over the network.
 
 ---
 
@@ -104,5 +104,5 @@ No feature or bug fix will be merged without automated tests:
 2. **Integration Tests (`tests/`):**
    * Use a helper to initialize a temporary Git repository in a tempdir (`tempfile` crate).
    * Create realistic commit histories (whitespace commits, renames, squashes).
-   * Run the `git-lineage` engine against the fixture repo to verify origin detection.
+   * Run the `cynn` engine against the fixture repo to verify origin detection.
 3. **Deterministic Fixtures:** Never rely on network calls in automated tests; mock all GitHub/GitLab API responses.

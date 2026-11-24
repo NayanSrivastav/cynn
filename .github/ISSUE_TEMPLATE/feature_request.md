@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest an idea or enhancement for git-lineage
+about: Suggest an idea or enhancement for cynn
 title: '[FEAT] '
 labels: enhancement
 assignees: ''
@@ -12,13 +12,15 @@ A clear and concise description of what the problem is. Ex: I'm always frustrate
 **Describe the solution you'd like**
 A clear and concise description of what you want to happen. Include proposed CLI syntax if applicable:
 ```bash
-git lineage [new-flag] ...
+git cynn [new-flag] ...
+# or
+cynn [new-flag] ...
 ```
 
 **Describe alternatives you've considered**
 A clear and concise description of any alternative solutions or features you've considered.
 
-**Does this align with git-lineage principles?**
+**Does this align with cynn principles?**
 - [ ] Local-first by default
 - [ ] Deterministic & zero-hallucination
 - [ ] Sub-second execution budget

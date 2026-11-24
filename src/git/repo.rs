@@ -503,16 +503,14 @@ mod tests {
 
     #[test]
     fn test_parse_remote_url_github() {
-        let ssh =
-            GitRepo::parse_remote_url("git@github.com:NayanSrivastav/git-lineage.git").unwrap();
+        let ssh = GitRepo::parse_remote_url("git@github.com:NayanSrivastav/cynn.git").unwrap();
         assert_eq!(ssh.platform, PlatformKind::GitHub);
         assert_eq!(ssh.host, "github.com");
-        assert_eq!(ssh.owner_repo, "NayanSrivastav/git-lineage");
+        assert_eq!(ssh.owner_repo, "NayanSrivastav/cynn");
 
-        let https =
-            GitRepo::parse_remote_url("https://github.com/NayanSrivastav/git-lineage").unwrap();
+        let https = GitRepo::parse_remote_url("https://github.com/NayanSrivastav/cynn").unwrap();
         assert_eq!(https.platform, PlatformKind::GitHub);
-        assert_eq!(https.owner_repo, "NayanSrivastav/git-lineage");
+        assert_eq!(https.owner_repo, "NayanSrivastav/cynn");
     }
 
     #[test]

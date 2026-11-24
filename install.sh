@@ -1,8 +1,8 @@
 #!/bin/sh
 set -e
 
-# git-lineage universal installer for Linux and macOS
-REPO="NayanSrivastav/git-lineage"
+# cynn universal installer for Linux and macOS
+REPO="NayanSrivastav/cynn"
 
 print_step() {
   printf "\033[1;36m==>\033[0m \033[1m%s\033[0m\n" "$1"
@@ -42,13 +42,13 @@ if [ -z "$VERSION" ]; then
   print_step "Checking latest release on GitHub..."
   VERSION=$(curl -s "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
   if [ -z "$VERSION" ]; then
-    VERSION="v0.2.0"
+    VERSION="v0.2.3"
   fi
 fi
 
-print_step "Installing git-lineage ${VERSION}..."
+print_step "Installing cynn ${VERSION}..."
 
-TARBALL="git-lineage-${VERSION}-${TARGET}.tar.gz"
+TARBALL="cynn-${VERSION}-${TARGET}.tar.gz"
 DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${TARBALL}"
 
 TEMP_DIR=$(mktemp -d)
@@ -73,18 +73,34 @@ else
   INSTALL_DIR="/usr/local/bin"
 fi
 
-print_step "Installing git-lineage binary to ${INSTALL_DIR}..."
+print_step "Installing cynn binaries to ${INSTALL_DIR}..."
 if [ -w "$INSTALL_DIR" ]; then
-  mv "$TEMP_DIR/git-lineage" "$INSTALL_DIR/git-lineage"
-  chmod +x "$INSTALL_DIR/git-lineage"
+  if [ -f "$TEMP_DIR/cynn" ]; then
+    mv "$TEMP_DIR/cynn" "$INSTALL_DIR/cynn"
+    chmod +x "$INSTALL_DIR/cynn"
+  fi
+  if [ -f "$TEMP_DIR/git-cynn" ]; then
+    mv "$TEMP_DIR/git-cynn" "$INSTALL_DIR/git-cynn"
+    chmod +x "$INSTALL_DIR/git-cynn"
+  elif [ -f "$INSTALL_DIR/cynn" ]; then
+    ln -sf "$INSTALL_DIR/cynn" "$INSTALL_DIR/git-cynn"
+  fi
 else
   print_step "Requires sudo permissions to install into ${INSTALL_DIR}:"
-  sudo mv "$TEMP_DIR/git-lineage" "$INSTALL_DIR/git-lineage"
-  sudo chmod +x "$INSTALL_DIR/git-lineage"
+  if [ -f "$TEMP_DIR/cynn" ]; then
+    sudo mv "$TEMP_DIR/cynn" "$INSTALL_DIR/cynn"
+    sudo chmod +x "$INSTALL_DIR/cynn"
+  fi
+  if [ -f "$TEMP_DIR/git-cynn" ]; then
+    sudo mv "$TEMP_DIR/git-cynn" "$INSTALL_DIR/git-cynn"
+    sudo chmod +x "$INSTALL_DIR/git-cynn"
+  elif [ -f "$INSTALL_DIR/cynn" ]; then
+    sudo ln -sf "$INSTALL_DIR/cynn" "$INSTALL_DIR/git-cynn"
+  fi
 fi
 
 print_step "Verification:"
-"$INSTALL_DIR/git-lineage" --version || true
+"$INSTALL_DIR/cynn" --version || true
 
-printf "\n\033[1;32m✓ Successfully installed git-lineage to %s/git-lineage!\033[0m\n" "$INSTALL_DIR"
-printf "Run \033[1mgit lineage --help\033[0m to get started.\n\n"
+printf "\n\033[1;32m✓ Successfully installed cynn to %s/cynn and %s/git-cynn!\033[0m\n" "$INSTALL_DIR" "$INSTALL_DIR"
+printf "Run \033[1mgit cynn --help\033[0m or \033[1mcynn --help\033[0m to get started.\n\n"

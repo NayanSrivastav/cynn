@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 250" width="100%" height="100%" fill="none">
+  <defs>
+    <!-- Diamond Gradients -->
+    <linearGradient id="gl-diamond-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="50%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#f1f5f9"/>
+    </linearGradient>
+    
+    <linearGradient id="gl-diamond-border" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7"/>
+      <stop offset="45%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#a855f7"/>
+    </linearGradient>
+
+    <linearGradient id="gl-branch-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7"/>
+      <stop offset="35%" stop-color="#3b82f6"/>
+      <stop offset="70%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#ec4899"/>
+    </linearGradient>
+
+    <linearGradient id="gl-node-magenta" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e11d48"/>
+      <stop offset="100%" stop-color="#c026d3"/>
+    </linearGradient>
+
+    <filter id="gl-subtle-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Diamond Icon -->
+  <g transform="translate(130, 125)">
+    <rect x="-80" y="-80" width="160" height="160" rx="34" transform="rotate(45)" fill="url(#gl-branch-gradient)" opacity="0.18" filter="url(#gl-subtle-glow)"/>
+    <rect x="-80" y="-80" width="160" height="160" rx="34" transform="rotate(45)" fill="url(#gl-diamond-bg)" stroke="url(#gl-diamond-border)" stroke-width="2.5"/>
+    <path d="M 0 -54 C 0 -18, -48 -32, -48 0 C -48 32, 0 18, 0 54" fill="none" stroke="url(#gl-branch-gradient)" stroke-width="12" stroke-linecap="round"/>
+    <rect x="14" y="-22" width="52" height="10" rx="5" fill="#94a3b8" opacity="0.85"/>
+    <rect x="14" y="-4" width="70" height="10" rx="5" fill="#94a3b8" opacity="0.85"/>
+    <rect x="14" y="14" width="40" height="10" rx="5" fill="#94a3b8" opacity="0.85"/>
+    <circle cx="0" cy="-54" r="13.5" fill="#ffffff" stroke="#0f172a" stroke-width="5"/>
+    <circle cx="-48" cy="0" r="13.5" fill="#ffffff" stroke="#0f172a" stroke-width="5"/>
+    <circle cx="0" cy="54" r="13.5" fill="#ffffff" stroke="url(#gl-node-magenta)" stroke-width="5.5"/>
+  </g>
+
+  <!-- Typography -->
+  <g transform="translate(285, 138)">
+    <text x="0" y="0" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif" font-weight="800" font-size="96" letter-spacing="-0.035em" fill="#0F172A">cynn</text>
+    <text x="4" y="44" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif" font-weight="600" font-size="19" fill="#64748B" letter-spacing="0.28em">TRACE THE ORIGIN OF CODE</text>
+  </g>
+</svg>
