@@ -29,6 +29,50 @@ pub struct RemotePrCandidate {
     pub source_branch: Option<String>,
     pub url: String,
     pub author: Option<String>,
+    /// True when the platform's own commit-to-PR/MR endpoint returned this candidate, which means the
+    /// platform has already verified that the commit is physically inside it.
+    pub linked_by_platform: bool,
+}
+
+/// Score for an MR whose Jira key matches the commit's key (or issue reference) exactly.
+pub const SCORE_EXACT_KEY: i32 = 100;
+/// Score for an MR the platform links to the commit, but whose Jira key differs from the commit's
+/// key or where the commit carries no Jira key at all.
+pub const SCORE_PLATFORM_ASSOCIATED: i32 = 30;
+
+/// Why an MR is only an indirect association with a commit.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AssociationKind {
+    /// The commit has no Jira key, so the MR supplies the ticket. The MR is usually the feature MR.
+    MissingCommitKey,
+    /// The commit and the MR carry different Jira keys. The MR is often a bundle (hotfix, merge train)
+    /// whose description covers other work.
+    KeyDiscrepancy,
+}
+
+/// An indirect MR association with a human-readable note.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PrAssociation {
+    pub kind: AssociationKind,
+    pub note: String,
+}
+
+/// (score, candidate, reject reason, association for indirect matches)
+type Scored<'a> = (
+    i32,
+    &'a RemotePrCandidate,
+    Option<String>,
+    Option<PrAssociation>,
+);
+
+/// The selected PR/MR together with how it was matched.
+#[derive(Debug, Clone)]
+pub struct PrMatch<'a> {
+    pub candidate: &'a RemotePrCandidate,
+    pub score: i32,
+    /// Set only for an indirect match (`SCORE_PLATFORM_ASSOCIATED`): describes why the MR is associated.
+    pub association: Option<PrAssociation>,
 }
 
 /// Extract issue keys (e.g., Jira keys like "COLL-7431", "PROJ-123", or issue references "#1044", "!1044")
@@ -87,15 +131,23 @@ pub fn extract_issue_keys(text: &str) -> Vec<String> {
     keys
 }
 
-/// Disqualify or score candidate PRs/MRs against commit metadata to guarantee zero false attribution,
-/// returning the best candidate (if verified) alongside an audit trail of any rejected candidates.
+/// Score candidate PRs/MRs against commit metadata and return the best match (if any) alongside an
+/// audit trail of rejected candidates.
+///
+/// Tiers:
+/// - `SCORE_EXACT_KEY` (100): the commit's key appears in the MR title, branch or description.
+/// - `SCORE_PLATFORM_ASSOCIATED` (30): the platform's commit endpoint returned the MR, so the commit is
+///   physically inside it, but the Jira keys differ or the commit has none. Accepted as an indirect
+///   association, never as an exact match.
+/// - `-1`: key conflict on a candidate the platform did not link, or an associated MR that loses to an
+///   exact-key candidate.
 #[allow(clippy::too_many_lines)]
-pub fn select_best_pr_candidate_with_audit<'a>(
+pub fn select_best_pr_match_with_audit<'a>(
     candidates: &'a [RemotePrCandidate],
     commit_subject: &str,
     commit_body: &str,
     platform: PlatformKind,
-) -> (Option<&'a RemotePrCandidate>, Vec<RejectedPrDecision>) {
+) -> (Option<PrMatch<'a>>, Vec<RejectedPrDecision>) {
     if candidates.is_empty() {
         return (None, Vec::new());
     }
@@ -108,7 +160,7 @@ pub fn select_best_pr_candidate_with_audit<'a>(
         .cloned()
         .collect();
 
-    let mut scored_candidates: Vec<(i32, &'a RemotePrCandidate, Option<String>)> = Vec::new();
+    let mut scored_candidates: Vec<Scored<'a>> = Vec::new();
 
     let ref_prefix = match platform {
         PlatformKind::GitLab => "!",
@@ -147,7 +199,7 @@ pub fn select_best_pr_candidate_with_audit<'a>(
             .cloned()
             .collect();
 
-        let (score, reject_reason) = if !commit_jira_keys.is_empty() {
+        let (score, reject_reason, association) = if !commit_jira_keys.is_empty() {
             // Commit has explicit Jira key(s)
             let mut matches_commit_key = false;
             for key in &commit_keys {
@@ -170,19 +222,31 @@ pub fn select_best_pr_candidate_with_audit<'a>(
             }
 
             if matches_commit_key {
-                (100, None)
+                (SCORE_EXACT_KEY, None, None)
             } else if !candidate_jira_keys.is_empty() {
                 let reason = format!(
                     "Jira key '{}' conflicts with commit key '{}'",
                     candidate_jira_keys[0], commit_jira_keys[0]
                 );
-                (-1, Some(reason))
+                if candidate.linked_by_platform {
+                    let note = format!(
+                        "Associated via {ref_prefix}{} ({}): the platform lists this commit inside the MR, but the commit key {} differs from the MR key",
+                        candidate.id, candidate_jira_keys[0], commit_jira_keys[0]
+                    );
+                    let association = PrAssociation {
+                        kind: AssociationKind::KeyDiscrepancy,
+                        note,
+                    };
+                    (SCORE_PLATFORM_ASSOCIATED, Some(reason), Some(association))
+                } else {
+                    (-1, Some(reason), None)
+                }
             } else {
                 let reason = format!(
                     "PR does not reference required commit key(s) [{}]",
                     commit_jira_keys.join(", ")
                 );
-                (0, Some(reason))
+                (0, Some(reason), None)
             }
         } else if !commit_keys.is_empty() {
             // Commit has non-Jira issue key(s) like #123
@@ -194,24 +258,25 @@ pub fn select_best_pr_candidate_with_audit<'a>(
                 }
             }
             if matches {
-                (100, None)
+                (SCORE_EXACT_KEY, None, None)
             } else {
                 let reason = format!(
                     "PR does not reference required commit key(s) [{}]",
                     commit_keys.join(", ")
                 );
-                (0, Some(reason))
+                (0, Some(reason), None)
             }
         } else {
             // Commit has no issue keys
             if candidate_jira_keys.is_empty() {
                 let sim = score_text_similarity(commit_subject, &candidate.title);
                 if sim > 0 {
-                    (sim, None)
+                    (sim, None, None)
                 } else {
                     (
                         sim,
                         Some("Insufficient title similarity to commit".to_string()),
+                        None,
                     )
                 }
             } else {
@@ -219,28 +284,71 @@ pub fn select_best_pr_candidate_with_audit<'a>(
                     "PR ticket key '{}' not referenced in commit",
                     candidate_jira_keys[0]
                 );
-                (-1, Some(reason))
+                if candidate.linked_by_platform {
+                    // The commit has no Jira key, so the MR supplies the missing ticket key.
+                    let note = format!(
+                        "Associated via {ref_prefix}{} ({}): the platform lists this commit inside the MR and the commit message carries no Jira key, so the MR supplies the ticket",
+                        candidate.id, candidate_jira_keys[0]
+                    );
+                    let association = PrAssociation {
+                        kind: AssociationKind::MissingCommitKey,
+                        note,
+                    };
+                    (SCORE_PLATFORM_ASSOCIATED, Some(reason), Some(association))
+                } else {
+                    (-1, Some(reason), None)
+                }
             }
         };
 
-        scored_candidates.push((score, candidate, reject_reason));
+        scored_candidates.push((score, candidate, reject_reason, association));
     }
 
-    let mut eligible: Vec<&(i32, &'a RemotePrCandidate, Option<String>)> = scored_candidates
+    // An associated MR is only a fallback: when another candidate matches the commit key exactly,
+    // the associated MR is disqualified.
+    if let Some(exact) = scored_candidates
         .iter()
-        .filter(|(score, _, _)| *score > 0)
+        .find(|(score, ..)| *score == SCORE_EXACT_KEY)
+        .map(|(_, cand, ..)| cand.id)
+    {
+        for entry in &mut scored_candidates {
+            if entry.0 == SCORE_PLATFORM_ASSOCIATED {
+                let conflict = entry.2.clone().unwrap_or_default();
+                entry.0 = -1;
+                entry.2 = Some(format!(
+                    "{conflict}; superseded by exact key match {ref_prefix}{exact}"
+                ));
+                entry.3 = None;
+            }
+        }
+    }
+
+    let mut eligible: Vec<&Scored<'a>> = scored_candidates
+        .iter()
+        .filter(|(score, ..)| *score > 0)
         .collect();
     eligible.sort_by_key(|a| std::cmp::Reverse(a.0));
 
-    let best = eligible.first().map(|(_, cand, _)| *cand);
+    let best = eligible.first().map(|(score, cand, _, assoc)| PrMatch {
+        candidate: cand,
+        score: *score,
+        association: assoc.clone(),
+    });
 
     let mut rejected = Vec::new();
-    for (score, candidate, reason) in scored_candidates {
-        if let Some(best_cand) = best {
-            if best_cand.id == candidate.id {
+    for (score, candidate, reason, association) in scored_candidates {
+        if let Some(ref best_match) = best {
+            if best_match.candidate.id == candidate.id {
                 continue;
             }
         }
+        let reason = if association.is_some() {
+            // An associated MR that lost to a higher-scoring candidate that is not an exact match.
+            let winner = best.as_ref().map_or(0, |b| b.candidate.id);
+            Some(format!("Associated MR outranked by {ref_prefix}{winner}"))
+        } else {
+            reason
+        };
         let fallback_reason = if score < 0 {
             "Disqualified due to issue key conflict"
         } else {
@@ -255,6 +363,18 @@ pub fn select_best_pr_candidate_with_audit<'a>(
     }
 
     (best, rejected)
+}
+
+/// Same as [`select_best_pr_match_with_audit`] but returns only the candidate.
+pub fn select_best_pr_candidate_with_audit<'a>(
+    candidates: &'a [RemotePrCandidate],
+    commit_subject: &str,
+    commit_body: &str,
+    platform: PlatformKind,
+) -> (Option<&'a RemotePrCandidate>, Vec<RejectedPrDecision>) {
+    let (best, rejected) =
+        select_best_pr_match_with_audit(candidates, commit_subject, commit_body, platform);
+    (best.map(|m| m.candidate), rejected)
 }
 
 /// Disqualify or score candidate PRs/MRs against commit metadata to guarantee zero false attribution.
@@ -360,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn test_disqualify_conflicting_jira_key() {
+    fn test_disqualify_conflicting_jira_key_when_not_platform_linked() {
         let commit_subject = "COLL-7431: Notetaker legacy filter to new filter migration API";
         let candidates = vec![RemotePrCandidate {
             id: 1097,
@@ -369,12 +489,13 @@ mod tests {
             source_branch: Some("hotfix/0.0.61.2".to_string()),
             url: "https://gitlab.com/.../1097".to_string(),
             author: Some("Nayansr".to_string()),
+            linked_by_platform: false,
         }];
 
         let selected = select_best_pr_candidate(&candidates, commit_subject, "");
         assert!(
             selected.is_none(),
-            "Conflicting Jira ticket COLL-7406 must be disqualified for commit COLL-7431"
+            "A conflicting Jira key on an MR the platform did not link must be disqualified"
         );
     }
 
@@ -389,6 +510,7 @@ mod tests {
                 source_branch: None,
                 url: "https://gitlab.com/.../1044".to_string(),
                 author: None,
+                linked_by_platform: true,
             },
             RemotePrCandidate {
                 id: 1097,
@@ -397,6 +519,7 @@ mod tests {
                 source_branch: Some("hotfix/0.0.61.2".to_string()),
                 url: "https://gitlab.com/.../1097".to_string(),
                 author: None,
+                linked_by_platform: true,
             },
         ];
 
@@ -415,6 +538,7 @@ mod tests {
             source_branch: None,
             url: "https://gitlab.com/.../1044".to_string(),
             author: None,
+            linked_by_platform: true,
         }];
 
         let selected = select_best_pr_candidate(&candidates, commit_subject, commit_body).unwrap();
@@ -431,42 +555,132 @@ mod tests {
             source_branch: None,
             url: "https://github.com/.../55".to_string(),
             author: None,
+            linked_by_platform: true,
         }];
 
         let selected = select_best_pr_candidate(&candidates, commit_subject, "").unwrap();
         assert_eq!(selected.id, 55);
     }
 
-    #[test]
-    fn test_rejected_pr_audit_trail_and_rejection_reason() {
-        let commit_subject = "feature/COLL-7431";
-        let candidates = vec![RemotePrCandidate {
-            id: 1097,
-            title: "Hotfix/0.0.56.2".to_string(),
-            description: Some("Backport COLL-7406 zip extraction".to_string()),
-            source_branch: Some("hotfix/0.0.56.2".to_string()),
-            url: "https://gitlab.com/repo/-/merge_requests/1097".to_string(),
+    fn candidate(id: u64, title: &str, desc: Option<&str>, linked: bool) -> RemotePrCandidate {
+        RemotePrCandidate {
+            id,
+            title: title.to_string(),
+            description: desc.map(String::from),
+            source_branch: None,
+            url: format!("https://gitlab.com/repo/-/merge_requests/{id}"),
             author: Some("developer".to_string()),
-        }];
+            linked_by_platform: linked,
+        }
+    }
 
-        let (best, rejected) = select_best_pr_candidate_with_audit(
+    #[test]
+    fn test_platform_linked_mr_with_key_conflict_is_associated_not_rejected() {
+        let candidates = vec![candidate(
+            1097,
+            "Hotfix/0.0.56.2",
+            Some("Backport COLL-7406 zip extraction"),
+            true,
+        )];
+
+        let (best, rejected) = select_best_pr_match_with_audit(
             &candidates,
-            commit_subject,
+            "feature/COLL-7431",
             "",
             PlatformKind::GitLab,
         );
 
+        let best = best.expect("platform-linked MR must be accepted as an association");
+        assert_eq!(best.candidate.id, 1097);
+        assert_eq!(best.score, SCORE_PLATFORM_ASSOCIATED);
+        let assoc = best.association.expect("association note");
+        assert_eq!(assoc.kind, AssociationKind::KeyDiscrepancy);
+        let note = assoc.note;
+        assert!(
+            note.starts_with("Associated via !1097 (COLL-7406)"),
+            "{note}"
+        );
+        assert!(note.contains("COLL-7431"), "{note}");
+        assert_eq!(rejected, Vec::new());
+    }
+
+    #[test]
+    fn test_platform_linked_mr_supplies_missing_commit_key() {
+        let candidates = vec![candidate(
+            608,
+            "COLL-7329: split qTest logs into ranged files",
+            Some("Write incremental logs as ranged files"),
+            true,
+        )];
+
+        let (best, rejected) =
+            select_best_pr_match_with_audit(&candidates, "temp", "", PlatformKind::GitLab);
+
+        let best = best.expect("MR must supply the missing ticket key");
+        assert_eq!(best.score, SCORE_PLATFORM_ASSOCIATED);
+        let assoc = best.association.expect("association note");
+        assert_eq!(assoc.kind, AssociationKind::MissingCommitKey);
+        let note = assoc.note;
+        assert!(
+            note.starts_with("Associated via !608 (COLL-7329)"),
+            "{note}"
+        );
+        assert!(note.contains("no Jira key"), "{note}");
+        assert_eq!(rejected, Vec::new());
+    }
+
+    #[test]
+    fn test_no_commit_key_and_mr_not_platform_linked_is_still_rejected() {
+        let candidates = vec![candidate(608, "COLL-7329: split logs", None, false)];
+
+        let (best, rejected) =
+            select_best_pr_match_with_audit(&candidates, "temp", "", PlatformKind::GitLab);
+
         assert!(best.is_none());
-        assert_eq!(rejected.len(), 1);
-        assert_eq!(rejected[0].reference, "!1097");
-        assert_eq!(rejected[0].title, "Hotfix/0.0.56.2");
         assert_eq!(
             rejected[0].reason,
-            "Jira key 'COLL-7406' conflicts with commit key 'COLL-7431'"
+            "PR ticket key 'COLL-7329' not referenced in commit"
         );
+    }
+
+    #[test]
+    fn test_exact_key_match_beats_and_disqualifies_associated_mr() {
+        let candidates = vec![
+            candidate(1097, "Hotfix/0.0.56.2", Some("Backport COLL-7406"), true),
+            candidate(1044, "COLL-7431: Notetaker migration", None, true),
+        ];
+
+        let (best, rejected) = select_best_pr_match_with_audit(
+            &candidates,
+            "COLL-7431: Notetaker migration API",
+            "",
+            PlatformKind::GitLab,
+        );
+
+        let best = best.unwrap();
+        assert_eq!(best.candidate.id, 1044);
+        assert_eq!(best.score, SCORE_EXACT_KEY);
+        assert!(best.association.is_none());
+        assert_eq!(rejected.len(), 1);
+        assert_eq!(rejected[0].reference, "!1097");
         assert_eq!(
-            rejected[0].audit_message(),
-            "Linked PR !1097 (\"Hotfix/0.0.56.2\") rejected because Jira key 'COLL-7406' conflicts with commit key 'COLL-7431'"
+            rejected[0].reason,
+            "Jira key 'COLL-7406' conflicts with commit key 'COLL-7431'; superseded by exact key match !1044"
         );
+    }
+
+    #[test]
+    fn test_two_associated_mrs_keep_first_and_report_the_other() {
+        let candidates = vec![
+            candidate(10, "COLL-1: first", None, true),
+            candidate(11, "COLL-2: second", None, true),
+        ];
+
+        let (best, rejected) =
+            select_best_pr_match_with_audit(&candidates, "temp", "", PlatformKind::GitLab);
+
+        assert_eq!(best.unwrap().candidate.id, 10);
+        assert_eq!(rejected.len(), 1);
+        assert_eq!(rejected[0].reason, "Associated MR outranked by !10");
     }
 }

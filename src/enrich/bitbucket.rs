@@ -1,6 +1,6 @@
 use crate::enrich::github::{is_technical_rationale, PrDetails, ReviewHighlight};
 use crate::enrich::match_pr::{
-    select_best_pr_candidate_with_audit, RejectedPrDecision, RemotePrCandidate,
+    select_best_pr_match_with_audit, RejectedPrDecision, RemotePrCandidate,
 };
 use crate::git::{PlatformKind, RemoteInfo};
 
@@ -118,21 +118,24 @@ pub fn fetch_bitbucket_pr_api(
                 source_branch,
                 url,
                 author,
+                linked_by_platform: true,
             })
         })
         .collect();
 
     let all_matched_prs: Vec<u64> = candidates.iter().map(|c| c.id).collect();
-    let (best, rejected) = select_best_pr_candidate_with_audit(
+    let (best, rejected) = select_best_pr_match_with_audit(
         &candidates,
         commit_subject,
         commit_body,
         PlatformKind::Bitbucket,
     );
 
-    let Some(best) = best else {
+    let Some(matched) = best else {
         return (None, rejected);
     };
+    let association = matched.association.clone();
+    let best = matched.candidate;
 
     let id = best.id;
     let title = best.title.clone();
@@ -202,6 +205,7 @@ pub fn fetch_bitbucket_pr_api(
             reviewer_highlights,
             linked_issues,
             all_matched_prs,
+            association,
         }),
         rejected,
     )
@@ -261,6 +265,7 @@ pub fn resolve_bitbucket_pr(
                         reviewer_highlights: Vec::new(),
                         linked_issues,
                         all_matched_prs: vec![number],
+                        association: None,
                     }),
                     all_rejected,
                 );

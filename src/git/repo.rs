@@ -376,6 +376,8 @@ impl GitRepo {
         cmd.arg("log")
             .arg(format!("-L{start_line},{end_line}:{}", rel_path.display()))
             .arg("-C")
+            .arg("-C")
+            .arg("-M")
             .arg("--no-patch")
             .arg("--format=%H%x00%h%x00%an%x00%ae%x00%ad%x00%s%x00%b%x1f");
 

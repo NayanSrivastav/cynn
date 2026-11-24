@@ -1,6 +1,6 @@
 use crate::enrich::github::{is_technical_rationale, PrDetails, ReviewHighlight};
 use crate::enrich::match_pr::{
-    select_best_pr_candidate_with_audit, RejectedPrDecision, RemotePrCandidate,
+    select_best_pr_match_with_audit, RejectedPrDecision, RemotePrCandidate,
 };
 use crate::git::{PlatformKind, RemoteInfo};
 use std::path::Path;
@@ -136,21 +136,24 @@ pub fn fetch_gitlab_mr_api(
                     source_branch,
                     url: web_url,
                     author,
+                    linked_by_platform: true,
                 })
             })
             .collect();
 
     let all_matched_prs: Vec<u64> = candidates.iter().map(|c| c.id).collect();
-    let (best, rejected) = select_best_pr_candidate_with_audit(
+    let (best, rejected) = select_best_pr_match_with_audit(
         &candidates,
         commit_subject,
         commit_body,
         PlatformKind::GitLab,
     );
 
-    let Some(best) = best else {
+    let Some(matched) = best else {
         return (None, rejected);
     };
+    let association = matched.association.clone();
+    let best = matched.candidate;
 
     let iid = best.id;
     let title = best.title.clone();
@@ -221,6 +224,7 @@ pub fn fetch_gitlab_mr_api(
             reviewer_highlights,
             linked_issues,
             all_matched_prs,
+            association,
         }),
         rejected,
     )
@@ -292,12 +296,13 @@ pub fn resolve_gitlab_mr(
                                 source_branch,
                                 url: web_url,
                                 author,
+                                linked_by_platform: true,
                             })
                         })
                         .collect();
 
                     let all_matched_prs: Vec<u64> = candidates.iter().map(|c| c.id).collect();
-                    let (best, rejected) = select_best_pr_candidate_with_audit(
+                    let (best, rejected) = select_best_pr_match_with_audit(
                         &candidates,
                         commit_subject,
                         commit_body,
@@ -309,7 +314,9 @@ pub fn resolve_gitlab_mr(
                         }
                     }
 
-                    if let Some(best) = best {
+                    if let Some(matched) = best {
+                        let association = matched.association.clone();
+                        let best = matched.candidate;
                         let body_summary = best.description.as_ref().and_then(|d| {
                             let trimmed = d.trim();
                             if trimmed.is_empty() {
@@ -335,6 +342,7 @@ pub fn resolve_gitlab_mr(
                                 reviewer_highlights: Vec::new(),
                                 linked_issues,
                                 all_matched_prs,
+                                association,
                             }),
                             all_rejected,
                         );
@@ -379,6 +387,7 @@ fn parse_gitlab_trailer(
                         reviewer_highlights: Vec::new(),
                         linked_issues: extract_gitlab_issues(&full_text),
                         all_matched_prs: vec![number],
+                        association: None,
                     });
                 }
             }
