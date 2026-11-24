@@ -90,7 +90,7 @@ Within **sub-second time**, `cynn` traverses parent commits, tracks code across 
 
 ```text
 ╭─ Lineage: src/billing/stripe_webhook.ts:88 ───────────────────────────────────────╮
-│ › if (event.id.startsWith("evt_test_") && payload.attempt > 1) { return 200; }     │
+│ › if (event.id.startsWith("evt_test_") && payload.attempt > 1) { return 200; }   │
 ╰───────────────────────────────────────────────────────────────────────────────────╯
 
 📌 Genesis (Introducing Commit)

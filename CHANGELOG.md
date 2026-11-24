@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.4] - 2026-11-24
+
+### Fixed
+- **Terminal Header Box Rendering**: Fixed incomplete, open-ended, and asymmetrical ANSI header box borders in terminal output. The header box now dynamically computes exact display widths, fully encloses code snippets and accordions with matching corners (`╭`, `╮`, `╰`, `╯`) and vertical pipes (`│ ... │`), expands tabs cleanly, accurately measures display widths for Unicode symbols, and safely truncates abnormally long lines to prevent border blowout.
+- **Documentation & README Box Alignment**: Symmetrically aligned code preview boxes in `README.md` and `docs/index.html` to a consistent 85 columns.
+
+---
+
 ## [0.2.3] - 2026-11-24
 
 ### Changed

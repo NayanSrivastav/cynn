@@ -7,69 +7,7 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
     let mut out = String::new();
 
     // Header box and code preview
-    if let Some(ref accordion) = dossier.snippet_accordion {
-        if let Some(ref scope) = accordion.scope {
-            out.push_str(&format!(
-                "╭─ Lineage: {}:{} ─ [ {} ] {}\n",
-                dossier.file_path.bold().cyan(),
-                dossier.line_range.bold().yellow(),
-                scope.bold().green(),
-                "─".repeat(20).dimmed()
-            ));
-        } else {
-            out.push_str(&format!(
-                "╭─ Lineage: {}:{} {}\n",
-                dossier.file_path.bold().cyan(),
-                dossier.line_range.bold().yellow(),
-                "─".repeat(40).dimmed()
-            ));
-        }
-
-        let gutter_width = accordion.max_line_number.to_string().len().max(2);
-        for line in &accordion.lines {
-            if line.is_fold_marker {
-                out.push_str(&format!(
-                    "│ {:>width$} {} {}\n",
-                    "",
-                    line.marker.yellow().dimmed(),
-                    line.content.italic().yellow().dimmed(),
-                    width = gutter_width
-                ));
-            } else if line.is_target {
-                let num_str = format!("{:>width$}", line.line_number, width = gutter_width);
-                out.push_str(&format!(
-                    "│ {} {} {}\n",
-                    num_str.bold().yellow(),
-                    line.marker.bold().yellow(),
-                    line.content.white()
-                ));
-            } else {
-                let num_str = format!("{:>width$}", line.line_number, width = gutter_width);
-                out.push_str(&format!(
-                    "│ {} {} {}\n",
-                    num_str.dimmed(),
-                    line.marker.dimmed(),
-                    line.content.dimmed()
-                ));
-            }
-        }
-        out.push_str(&format!("╰{}\n\n", "─".repeat(60).dimmed()));
-    } else {
-        out.push_str(&format!(
-            "╭─ Lineage: {}:{} {}\n",
-            dossier.file_path.bold().cyan(),
-            dossier.line_range.bold().yellow(),
-            "─".repeat(40).dimmed()
-        ));
-
-        for line in dossier.code_snippet.lines().take(5) {
-            out.push_str(&format!("│ {} {}\n", "›".dimmed(), line.italic()));
-        }
-        if dossier.code_snippet.lines().count() > 5 {
-            out.push_str(&format!("│ {} ... (truncated)\n", "›".dimmed()));
-        }
-        out.push_str(&format!("╰{}\n\n", "─".repeat(60).dimmed()));
-    }
+    render_header_box(dossier, &mut out);
 
     // Multi-Origin Dissection (if block spans multiple introducing commits)
     if dossier.is_multi_origin {
@@ -291,4 +229,377 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
     }
 
     out
+}
+
+struct BoxLine {
+    visible_width: usize,
+    rendered: String,
+}
+
+fn char_width(c: char) -> usize {
+    if c.is_control() {
+        return 0;
+    }
+    match c {
+        '\u{1100}'..='\u{115F}'
+        | '\u{2329}'..='\u{232A}'
+        | '\u{2E80}'..='\u{A4CF}'
+        | '\u{AC00}'..='\u{D7A3}'
+        | '\u{F900}'..='\u{FAFF}'
+        | '\u{FE10}'..='\u{FE19}'
+        | '\u{FE30}'..='\u{FE6F}'
+        | '\u{FF00}'..='\u{FF60}'
+        | '\u{FFE0}'..='\u{FFE6}'
+        | '\u{1F300}'..='\u{1F64F}'
+        | '\u{1F680}'..='\u{1F6FF}' => 2,
+        _ => 1,
+    }
+}
+
+fn visible_width(s: &str) -> usize {
+    s.chars().map(char_width).sum()
+}
+
+fn expand_tabs(s: &str) -> String {
+    s.replace('\t', "    ")
+}
+
+fn truncate_to_width(s: &str, max_w: usize) -> (String, usize) {
+    let mut current_w = 0;
+    let mut out = String::new();
+    for c in s.chars() {
+        let w = char_width(c);
+        if current_w + w + 1 > max_w {
+            out.push('…');
+            current_w += 1;
+            return (out, current_w);
+        }
+        out.push(c);
+        current_w += w;
+    }
+    (out, current_w)
+}
+
+#[allow(clippy::too_many_lines)]
+fn render_header_box(dossier: &LineageDossier, out: &mut String) {
+    const MAX_BOX_WIDTH: usize = 160;
+
+    let scope_opt = dossier
+        .snippet_accordion
+        .as_ref()
+        .and_then(|a| a.scope.as_deref());
+
+    // 1. Compute lines to render inside the box
+    let box_lines: Vec<BoxLine> = if let Some(ref accordion) = dossier.snippet_accordion {
+        let gutter_width = accordion.max_line_number.to_string().len().max(2);
+        let mut lines = Vec::new();
+        for line in &accordion.lines {
+            let clean_content = expand_tabs(&line.content);
+            let marker_vis = visible_width(&line.marker);
+            let prefix_vis = gutter_width + 1 + marker_vis + 1; // "<gutter> <marker> "
+
+            let max_content_w = MAX_BOX_WIDTH.saturating_sub(prefix_vis + 4);
+            let (content_str, content_vis) = if visible_width(&clean_content) > max_content_w {
+                truncate_to_width(&clean_content, max_content_w)
+            } else {
+                (clean_content.clone(), visible_width(&clean_content))
+            };
+
+            let total_vis = prefix_vis + content_vis;
+
+            let rendered = if line.is_fold_marker {
+                format!(
+                    "{:>width$} {} {}",
+                    "",
+                    line.marker.yellow().dimmed(),
+                    content_str.italic().yellow().dimmed(),
+                    width = gutter_width
+                )
+            } else if line.is_target {
+                let num_str = format!("{:>width$}", line.line_number, width = gutter_width);
+                format!(
+                    "{} {} {}",
+                    num_str.bold().yellow(),
+                    line.marker.bold().yellow(),
+                    content_str.white()
+                )
+            } else {
+                let num_str = format!("{:>width$}", line.line_number, width = gutter_width);
+                format!(
+                    "{} {} {}",
+                    num_str.dimmed(),
+                    line.marker.dimmed(),
+                    content_str.dimmed()
+                )
+            };
+
+            lines.push(BoxLine {
+                visible_width: total_vis,
+                rendered,
+            });
+        }
+        lines
+    } else {
+        let mut lines = Vec::new();
+        let max_content_w = MAX_BOX_WIDTH.saturating_sub(6); // "› " is 2, borders are 4
+        for line in dossier.code_snippet.lines().take(5) {
+            let clean_content = expand_tabs(line);
+            let (content_str, content_vis) = if visible_width(&clean_content) > max_content_w {
+                truncate_to_width(&clean_content, max_content_w)
+            } else {
+                (clean_content.clone(), visible_width(&clean_content))
+            };
+            let total_vis = 2 + content_vis;
+            let rendered = format!("{} {}", "›".dimmed(), content_str.italic());
+            lines.push(BoxLine {
+                visible_width: total_vis,
+                rendered,
+            });
+        }
+        if dossier.code_snippet.lines().count() > 5 {
+            lines.push(BoxLine {
+                visible_width: 17,
+                rendered: format!("{} ... (truncated)", "›".dimmed()),
+            });
+        }
+        lines
+    };
+
+    // 2. Calculate visible width of top header prefix
+    // "╭─ Lineage: <file_path>:<line_range>" (+ " ─ [ <scope> ]") + " "
+    let top_prefix_vis = 3 // "╭─ "
+        + 9 // "Lineage: "
+        + visible_width(&dossier.file_path)
+        + 1 // ":"
+        + visible_width(&dossier.line_range)
+        + scope_opt.map_or(0, |s| 5 + visible_width(s) + 2) // " ─ [ " + s + " ]"
+        + 1; // " " before dashes
+
+    let min_top_width = top_prefix_vis + 3; // at least 2 dashes + 1 corner "╮"
+
+    let max_body_vis = box_lines.iter().map(|l| l.visible_width).max().unwrap_or(0);
+    let min_body_width = max_body_vis + 4; // "│ " (2) + content + " │" (2)
+
+    let env_cols = std::env::var("COLUMNS")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(85);
+
+    let base_target_width = env_cols.clamp(80, 85);
+    let box_width = base_target_width.max(min_top_width).max(min_body_width);
+
+    // 3. Render Top border
+    let dashes_count = box_width.saturating_sub(top_prefix_vis + 1); // 1 for "╮"
+    let dashes_str = "─".repeat(dashes_count);
+
+    if let Some(scope) = scope_opt {
+        out.push_str(&format!(
+            "{}{}{}{}{}{}{}{}{}{}{}\n",
+            "╭─ ".dimmed(),
+            "Lineage: ".bold(),
+            dossier.file_path.bold().cyan(),
+            ":".dimmed(),
+            dossier.line_range.bold().yellow(),
+            " ─ [ ".dimmed(),
+            scope.bold().green(),
+            " ]".dimmed(),
+            " ",
+            dashes_str.dimmed(),
+            "╮".dimmed()
+        ));
+    } else {
+        out.push_str(&format!(
+            "{}{}{}{}{}{}{}{}\n",
+            "╭─ ".dimmed(),
+            "Lineage: ".bold(),
+            dossier.file_path.bold().cyan(),
+            ":".dimmed(),
+            dossier.line_range.bold().yellow(),
+            " ",
+            dashes_str.dimmed(),
+            "╮".dimmed()
+        ));
+    }
+
+    // 4. Render Body lines
+    for line in box_lines {
+        let padding_count = box_width.saturating_sub(4 + line.visible_width);
+        let padding_str = " ".repeat(padding_count);
+        out.push_str(&format!(
+            "{} {}{}{}\n",
+            "│".dimmed(),
+            line.rendered,
+            padding_str,
+            " │".dimmed()
+        ));
+    }
+
+    // 5. Render Bottom border
+    let bottom_dashes = "─".repeat(box_width.saturating_sub(2));
+    out.push_str(&format!(
+        "{}{}{}\n\n",
+        "╰".dimmed(),
+        bottom_dashes.dimmed(),
+        "╯".dimmed()
+    ));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::accordion::{AccordionLine, AccordionSnippet};
+    use crate::core::Confidence;
+
+    fn strip_ansi(s: &str) -> String {
+        let mut out = String::new();
+        let mut in_escape = false;
+        for c in s.chars() {
+            if c == '\x1b' {
+                in_escape = true;
+            } else if in_escape {
+                if c == 'm' {
+                    in_escape = false;
+                }
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn test_char_width_and_visible_width() {
+        assert_eq!(char_width('a'), 1);
+        assert_eq!(char_width('╭'), 1);
+        assert_eq!(char_width('╮'), 1);
+        assert_eq!(char_width('│'), 1);
+        assert_eq!(char_width('▾'), 1);
+        assert_eq!(char_width('…'), 1);
+        assert_eq!(char_width('📌'), 2);
+        assert_eq!(visible_width("hello world"), 11);
+        assert_eq!(visible_width("╭─ Lineage: ─╮"), 14);
+    }
+
+    #[test]
+    fn test_box_rendering_with_accordion_is_symmetrical() {
+        let dossier = LineageDossier {
+            file_path: "src/billing/stripe_webhook.ts".to_string(),
+            line_range: "88".to_string(),
+            code_snippet: String::new(),
+            snippet_accordion: Some(AccordionSnippet {
+                scope: Some("handle_webhook".to_string()),
+                lines: vec![
+                    AccordionLine {
+                        line_number: 87,
+                        content: "const attempt = payload.attempt;".to_string(),
+                        is_target: false,
+                        is_fold_marker: false,
+                        marker: "│".to_string(),
+                    },
+                    AccordionLine {
+                        line_number: 88,
+                        content:
+                            "if (event.id.startsWith(\"evt_test_\") && attempt > 1) { return 200; }"
+                                .to_string(),
+                        is_target: true,
+                        is_fold_marker: false,
+                        marker: "▶".to_string(),
+                    },
+                ],
+                max_line_number: 88,
+            }),
+            is_multi_origin: false,
+            origins: Vec::new(),
+            genesis_commit: None,
+            fallback_used: false,
+            enrichment_status: "offline".to_string(),
+            pr_reference: None,
+            pr_details: None,
+            intent_summary: "Test intent".to_string(),
+            evolution: Vec::new(),
+            related_tests: Vec::new(),
+            evidence: Vec::new(),
+            confidence: Confidence::High,
+            confidence_docs: "https://example.com".to_string(),
+            rejected_prs: Vec::new(),
+            genesis_diff: None,
+        };
+
+        let rendered = render_ansi(&dossier);
+        let lines: Vec<&str> = rendered.lines().take(4).collect();
+        assert_eq!(lines.len(), 4);
+
+        let top_line = strip_ansi(lines[0]);
+        let body_1 = strip_ansi(lines[1]);
+        let body_2 = strip_ansi(lines[2]);
+        let bottom_line = strip_ansi(lines[3]);
+
+        assert!(top_line.starts_with("╭─ Lineage: "));
+        assert!(top_line.ends_with('╮'));
+        assert!(body_1.starts_with("│ "));
+        assert!(body_1.ends_with(" │"));
+        assert!(body_2.starts_with("│ "));
+        assert!(body_2.ends_with(" │"));
+        assert!(bottom_line.starts_with('╰'));
+        assert!(bottom_line.ends_with('╯'));
+
+        let w_top = visible_width(&top_line);
+        let w_b1 = visible_width(&body_1);
+        let w_b2 = visible_width(&body_2);
+        let w_bottom = visible_width(&bottom_line);
+
+        assert_eq!(w_top, w_bottom, "Top and bottom border width mismatch");
+        assert_eq!(w_top, w_b1, "Top and body line 1 width mismatch");
+        assert_eq!(w_top, w_b2, "Top and body line 2 width mismatch");
+    }
+
+    #[test]
+    fn test_box_rendering_with_simple_snippet_is_symmetrical() {
+        let dossier = LineageDossier {
+            file_path: "src/billing/stripe_webhook.ts".to_string(),
+            line_range: "88".to_string(),
+            code_snippet:
+                "if (event.id.startsWith(\"evt_test_\") && payload.attempt > 1) { return 200; }"
+                    .to_string(),
+            snippet_accordion: None,
+            is_multi_origin: false,
+            origins: Vec::new(),
+            genesis_commit: None,
+            fallback_used: false,
+            enrichment_status: "offline".to_string(),
+            pr_reference: None,
+            pr_details: None,
+            intent_summary: "Test intent".to_string(),
+            evolution: Vec::new(),
+            related_tests: Vec::new(),
+            evidence: Vec::new(),
+            confidence: Confidence::High,
+            confidence_docs: "https://example.com".to_string(),
+            rejected_prs: Vec::new(),
+            genesis_diff: None,
+        };
+
+        let rendered = render_ansi(&dossier);
+        let lines: Vec<&str> = rendered.lines().take(3).collect();
+        assert_eq!(lines.len(), 3);
+
+        let top_line = strip_ansi(lines[0]);
+        let body = strip_ansi(lines[1]);
+        let bottom_line = strip_ansi(lines[2]);
+
+        assert!(top_line.starts_with("╭─ Lineage: "));
+        assert!(top_line.ends_with('╮'));
+        assert!(body.starts_with("│ "));
+        assert!(body.ends_with(" │"));
+        assert!(bottom_line.starts_with('╰'));
+        assert!(bottom_line.ends_with('╯'));
+
+        let w_top = visible_width(&top_line);
+        let w_body = visible_width(&body);
+        let w_bottom = visible_width(&bottom_line);
+
+        assert_eq!(w_top, w_bottom, "Top and bottom border width mismatch");
+        assert_eq!(w_top, w_body, "Top and body line width mismatch");
+        assert_eq!(w_top, 85, "Expected standard 85 width for stripe webhook");
+    }
 }

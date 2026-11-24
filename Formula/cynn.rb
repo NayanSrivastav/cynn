@@ -1,7 +1,7 @@
 class Cynn < Formula
   desc "Codebase archaeology CLI & agent forensic primitive. Don't just blame it, trace its cynn."
   homepage "https://nayansrivastav.github.io/cynn/"
-  version "0.2.3"
+  version "0.2.4"
   license "MIT"
 
   on_macos do

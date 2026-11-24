@@ -1,6 +1,6 @@
 [package]
 name = "cynn"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2021"
 authors = ["Nayan Srivastava <nayansrivastav@yahoo.in>"]
 description = "The Codebase Archaeology CLI and Agent Forensic Primitive. Don't just blame it, trace its cynn."
