@@ -8,7 +8,7 @@ readme = "README.md"
 license = "MIT"
 repository = "https://github.com/NayanSrivastav/cynn"
 homepage = "https://nayansrivastav.github.io/cynn/"
-keywords = ["git", "archaeology", "blame", "cli", "cynn", "forensics"]
+keywords = ["git", "archaeology", "blame", "cli", "forensics"]
 categories = ["command-line-utilities", "development-tools"]
 
 [lib]
