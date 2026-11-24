@@ -411,8 +411,7 @@ impl<'a> GenesisAnalyzer<'a> {
             pr_details,
             intent_summary,
             confidence,
-            confidence_docs: "https://nayansrivastav.github.io/git-lineage/#confidence-tiers"
-                .to_string(),
+            confidence_docs: "https://nayansrivastav.github.io/cynn/#confidence-tiers".to_string(),
             fallback_used,
             enrichment_status,
             evidence,

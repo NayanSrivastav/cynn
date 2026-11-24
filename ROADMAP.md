@@ -1,4 +1,4 @@
-# git-lineage: Roadmap & Feature Specifications
+# cynn: Roadmap & Feature Specifications
 
 > **Tagline:** The Codebase Archaeology CLI and Agent Forensic Primitive.  
 > Uncover why code was written, how it evolved, and the human decisions behind it—without the noise.
@@ -8,7 +8,7 @@
 ## 1. Vision & Architecture
 
 ### Core Value Proposition
-`git-lineage` replaces the blind alleys of `git blame`. Instead of stopping at formatting commits, renames, or lint fixes, it performs deterministic graph traversal to surface:
+`cynn` replaces the blind alleys of `git blame`. Instead of stopping at formatting commits, renames, or lint fixes, it performs deterministic graph traversal to surface:
 1. **Genesis:** The true introducing commit, author, and date.
 2. **Context:** The associated Pull Request, review discussion, and linked issue rationale.
 3. **Evolution:** Key milestones where logic mutated across time, renames, and file moves.
@@ -60,11 +60,11 @@ v0.1.0 "Genesis"       v0.2.x "Context"            v0.3.0 "Agent MCP & AST"     
 ### Milestone 1: v0.1.0 — "Genesis" (Completed)
 * **Focus:** Replace `git blame` with true origin detection.
 * **Delivered:**
-  * Line and line-range targeting: `git lineage src/main.rs:42` and `:40-60`.
+  * Line and line-range targeting: `cynn src/main.rs:42` (or `git cynn`) and `:40-60`.
   * Automatic noise filtering: ignores whitespace (`-w`) and traces across renames (`-M`, `--follow`).
   * Provenance traversal: traverses commit history to isolate the true introducing commit SHA.
   * Terminal ANSI Dossier: Clean box-drawing output showing Genesis, Author, Date, and Commit Subject.
-  * Markdown Export: `git lineage <target> --md` for documentation and pull request discussions.
+  * Markdown Export: `cynn <target> --md` for documentation and pull request discussions.
   * 100% offline local git log execution.
 
 ---
@@ -86,9 +86,9 @@ v0.1.0 "Genesis"       v0.2.x "Context"            v0.3.0 "Agent MCP & AST"     
 * **Focus:** Position as the unhallucinated provenance primitive for coding agents, fix rationale emptiness via issue trackers, and eliminate line-drift attribution errors with Tree-sitter.
 * **Deliverables:**
   * **Model Context Protocol (MCP) Server stdio Adapter (`--mcp`):**
-    * Native stdio MCP server enabling Claude Code, Cursor, Windsurf, and Cline to call `git-lineage` directly before modifying legacy code.
+    * Native stdio MCP server enabling Claude Code, Cursor, Windsurf, and Cline to call `cynn` directly before modifying legacy code.
     * Returns deterministic, machine-readable lineage with audit trails, companion tests, and issue rationale directly into agent context windows.
-    * One-command setup: `claude mcp add git-lineage -- git-lineage --mcp`.
+    * One-command setup: `claude mcp add cynn -- cynn --mcp`.
   * **Issue Tracker Connectors (Jira & Linear):**
     * In enterprise repos, commits routinely cite Jira/Linear keys (`COLL-7431`, `ENG-1024`) while PRs are squashed, rebased, or missing.
     * Direct REST integration for Jira Cloud/Server (`JIRA_BASE_URL`, `JIRA_API_TOKEN`) and Linear (`LINEAR_API_KEY`).
@@ -102,7 +102,7 @@ v0.1.0 "Genesis"       v0.2.x "Context"            v0.3.0 "Agent MCP & AST"     
   * **The 10-Second Comparison Demo:**
     * High-contrast side-by-side terminal demo (VHS recording) on a well-known open-source repository (e.g. `tokio` or `ripgrep`):
       * **Left (`git blame`):** Attributes a critical invariant to a generic `style: rustfmt` reformatting commit.
-      * **Right (`git-lineage`):** Traverses past formatting churn, pinpoints original introducing PR/issue rationale, and cites technical discussion.
+      * **Right (`cynn`):** Traverses past formatting churn, pinpoints original introducing PR/issue rationale, and cites technical discussion.
 
 ---
 
@@ -112,7 +112,7 @@ v0.1.0 "Genesis"       v0.2.x "Context"            v0.3.0 "Agent MCP & AST"     
   * **Native `.git-blame-ignore-revs` Support:**
     * Automatically detect and respect standard `.git-blame-ignore-revs` files and repository `git config blame.ignoreRevsFile`.
     * Skips massive codebase reformatting, Prettier/Black passes, and license header migrations without inventing proprietary ignore configurations.
-  * **Codebase Archaeology Audit (`git-lineage audit <dir>`):**
+  * **Codebase Archaeology Audit (`cynn audit <dir>`):**
     * Replaces unbounded recursive dumps with actionable risk auditing.
     * Generates targeted reports surfacing:
       1. Critical functions/modules with zero recorded rationale (`[No rationale recorded]`).
@@ -124,11 +124,11 @@ v0.1.0 "Genesis"       v0.2.x "Context"            v0.3.0 "Agent MCP & AST"     
 ### Milestone 5: v1.0.0 — "Production & Distribution"
 * **Focus:** Global packaging, CI governance, and IDE/agent distribution.
 * **Deliverables:**
-  * **GitHub Action (`git-lineage-action`):**
+  * **GitHub Action (`cynn-action`):**
     * Automated PR review bot warning engineers when modifying legacy lines untouched for >2 years or touching code with critical architectural notes.
   * **Distribution & Packaging:**
-    * Official Homebrew tap formula (`brew install nayansrivastav/tap/git-lineage`).
-    * Crates.io publication (`cargo install git-lineage`).
+    * Official Homebrew tap formula (`brew install nayansrivastav/tap/cynn`).
+    * Crates.io publication (`cargo install cynn`).
     * Prebuilt signed release binaries for macOS (Apple Silicon & Intel) and Linux (x86_64, aarch64).
 
 ---
@@ -140,5 +140,5 @@ v0.1.0 "Genesis"       v0.2.x "Context"            v0.3.0 "Agent MCP & AST"     
 | **v0.1.0** | Core Genesis CLI (`--md`, local git traversal) | — | **Completed** |
 | **v0.2.0 / v0.2.1** | Remote PR enrichment, multi-origin blame, audit trail, `--json`, `--diff` | — | **Completed** |
 | **v0.3.0** | **MCP Server (`--mcp`)**, **Jira & Linear connectors**, **Tree-sitter AST tracking** | 1–2 Weeks | **Next (In Planning)** |
-| **v0.4.0** | Native `.git-blame-ignore-revs`, `git-lineage audit <dir>` | 1–2 Weeks | Backlog |
+| **v0.4.0** | Native `.git-blame-ignore-revs`, `cynn audit <dir>` | 1–2 Weeks | Backlog |
 | **v1.0.0** | GitHub Action PR bot, Homebrew Tap, Crates.io | 1 Week | Backlog |

@@ -1,5 +1,5 @@
-use git_lineage::core::{Confidence, GenesisAnalyzer, Target};
-use git_lineage::git::GitRepo;
+use cynn::core::{Confidence, GenesisAnalyzer, Target};
+use cynn::git::GitRepo;
 use std::fs;
 use std::process::Command;
 use tempfile::tempdir;
@@ -59,7 +59,7 @@ fn test_genesis_analyzer_on_fixture_repo() {
         "Raw blame without -w should point to formatting commit"
     );
 
-    // 3. Run git-lineage analysis on line 2
+    // 3. Run cynn analysis on line 2
     let repo = GitRepo::discover(repo_path).expect("Failed to discover repo");
     let target = Target {
         path: "billing.ts".into(),
@@ -71,7 +71,7 @@ fn test_genesis_analyzer_on_fixture_repo() {
     let analyzer = GenesisAnalyzer::new(&repo);
     let dossier = analyzer.analyze(&target).expect("Analysis failed");
 
-    // 4. Verify that git-lineage correctly bypassed the prettier commit and identified Genesis (#42)
+    // 4. Verify that cynn correctly bypassed the prettier commit and identified Genesis (#42)
     assert!(dossier.genesis_commit.is_some());
     let genesis = dossier.genesis_commit.unwrap();
     assert_eq!(genesis.author_name, "Test Author");
@@ -512,7 +512,7 @@ fn test_multi_platform_gitlab_and_bitbucket_trailers() {
 
     let repo = GitRepo::discover(repo_path).expect("Failed to discover repo");
     let remote_info = repo.get_remote_info().expect("Remote info should exist");
-    assert_eq!(remote_info.platform, git_lineage::git::PlatformKind::GitLab);
+    assert_eq!(remote_info.platform, cynn::git::PlatformKind::GitLab);
     assert_eq!(remote_info.owner_repo, "acme-org/analytics-service");
 
     let analyzer = GenesisAnalyzer::new(&repo);

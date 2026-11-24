@@ -1,6 +1,6 @@
-# Contributing to git-lineage
+# Contributing to cynn
 
-Thank you for your interest in contributing to **`git-lineage`**!  
+Thank you for your interest in contributing to **`cynn`**!  
 We are building a five-star, high-performance developer tool, and we hold our codebase to rigorous engineering standards.
 
 ---
@@ -20,8 +20,8 @@ We are committed to providing a welcoming, inclusive, and harassment-free enviro
 
 ### Clone and Build
 ```bash
-git clone https://github.com/NayanSrivastav/git-lineage.git
-cd git-lineage
+git clone https://github.com/NayanSrivastav/cynn.git
+cd cynn
 
 # Build in debug mode
 cargo build

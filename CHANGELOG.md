@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `git-lineage` will be documented in this file.
+All notable changes to `cynn` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -14,11 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **v0.3.0**: Jira REST API (`JIRA_BASE_URL` + `JIRA_API_TOKEN`) and Linear API (`LINEAR_API_KEY`) connectors.
 - **v0.3.0**: Tree-sitter AST & symbol-aware tracking for methods, classes, and syntax blocks.
 - **v0.4.0**: Native `.git-blame-ignore-revs` and `git config blame.ignoreRevsFile` support.
-- **v0.4.0**: Codebase archaeology audit command (`git-lineage audit <dir>`).
+- **v0.4.0**: Codebase archaeology audit command (`cynn audit <dir>`).
 
 ---
 
 ## [0.2.3] - 2026-11-24
+
+### Changed
+- **Rebranded to `cynn`**: Full project rebrand to `cynn` (Old English `/kɪn/` — lineage, kin, descent, ancestral origin) with dual binary invocation (`cynn` and `git cynn`), reserved on crates.io.
 
 ### Fixed
 - **Platform-Linked MR Association**: Prevent false disqualifications when a commit carries no Jira ticket key (e.g., "temp" or WIP commits) but the platform-linked Merge Request provides the ticket key. The MR is now accurately associated.
@@ -50,7 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Automated GitHub Actions multi-platform binary release pipeline for macOS (Apple Silicon `aarch64` and Intel `x86_64`) and Linux (`x86_64`).
 - Universal one-line installer script (`install.sh`) with automated SHA-256 checksum verification and architecture detection.
-- Homebrew formula (`Formula/git-lineage.rb`) for native package management.
+- Homebrew formula (`Formula/cynn.rb`) for native package management.
 
 ---
 
@@ -61,7 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pull request discussion and reviewer comment classification (`is_technical`).
 - Companion test correlation engine discovering related test files (`*.test.*`, `*_spec.*`) without duplicate or self-matching entries.
 - Machine-readable `--json` schema output designed for autonomous coding agents (Claude Code, Cursor, Cline).
-- Documentation portal and landing page at `https://nayansrivastav.github.io/git-lineage/`.
+- Documentation portal and landing page at `https://nayansrivastav.github.io/cynn/`.
 
 ---
 

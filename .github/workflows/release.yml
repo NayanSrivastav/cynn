@@ -53,10 +53,10 @@ jobs:
         if: matrix.archive == 'tar.gz'
         shell: bash
         run: |
-          BIN_PATH="target/${{ matrix.target }}/release/git-lineage"
-          strip "$BIN_PATH" || true
-          ARCHIVE_NAME="git-lineage-${{ github.ref_name }}-${{ matrix.target }}.tar.gz"
-          tar -czf "$ARCHIVE_NAME" -C "target/${{ matrix.target }}/release" git-lineage
+          strip "target/${{ matrix.target }}/release/cynn" || true
+          strip "target/${{ matrix.target }}/release/git-cynn" || true
+          ARCHIVE_NAME="cynn-${{ github.ref_name }}-${{ matrix.target }}.tar.gz"
+          tar -czf "$ARCHIVE_NAME" -C "target/${{ matrix.target }}/release" cynn git-cynn
           if command -v sha256sum >/dev/null 2>&1; then
             sha256sum "$ARCHIVE_NAME" > "${ARCHIVE_NAME}.sha256"
           else
@@ -69,8 +69,8 @@ jobs:
         if: matrix.archive == 'zip'
         shell: bash
         run: |
-          ARCHIVE_NAME="git-lineage-${{ github.ref_name }}-${{ matrix.target }}.zip"
-          7z a "$ARCHIVE_NAME" "./target/${{ matrix.target }}/release/git-lineage.exe"
+          ARCHIVE_NAME="cynn-${{ github.ref_name }}-${{ matrix.target }}.zip"
+          7z a "$ARCHIVE_NAME" "./target/${{ matrix.target }}/release/cynn.exe" "./target/${{ matrix.target }}/release/git-cynn.exe"
           sha256sum "$ARCHIVE_NAME" > "${ARCHIVE_NAME}.sha256"
           mkdir -p dist
           mv "$ARCHIVE_NAME" "${ARCHIVE_NAME}.sha256" dist/

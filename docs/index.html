@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>git-lineage — The Codebase Archaeology CLI & Agent Forensic Primitive</title>
+  <title>cynn — The Codebase Archaeology CLI & Agent Forensic Primitive</title>
   <meta name="description" content="Uncover why code was written, how it evolved, and the human decisions behind it—without the noise. Built for engineers and AI coding agents.">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="shortcut icon" type="image/x-icon" href="favicon.ico">
@@ -289,15 +289,14 @@
     <div class="container">
       <nav>
         <a href="#" class="logo">
-          <img src="assets/git-lineage-icon.svg" alt="git-lineage icon" height="28" style="vertical-align: middle;">
-          git-lineage <span class="logo-badge">v0.2.2</span>
+          cynn <span class="logo-badge">v0.2.3</span>
         </a>
         <div class="nav-links">
           <a href="#agents">For AI Agents</a>
           <a href="#confidence-tiers">Confidence Tiers</a>
           <a href="#features">Features</a>
           <a href="#comparison">Why Not Blame?</a>
-          <a href="https://github.com/NayanSrivastav/git-lineage" class="btn-github">
+          <a href="https://github.com/NayanSrivastav/cynn" class="btn-github">
             <svg height="18" width="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
             GitHub
           </a>
@@ -309,15 +308,15 @@
   <main>
     <section class="hero container">
       <div style="margin-bottom: 24px;">
-        <img src="assets/git-lineage-logo.svg" alt="git-lineage logo" width="380" style="filter: drop-shadow(0 10px 30px rgba(56, 189, 248, 0.25));">
+        <img src="assets/cynn-logo.svg" alt="cynn logo" width="340" style="filter: drop-shadow(0 10px 30px rgba(56, 189, 248, 0.25));">
       </div>
       <div class="pill">⚡ The Codebase Archaeology CLI & Agent Forensic Primitive</div>
-      <h1>Why was this code written?<br>Stop guessing.</h1>
-      <p>Standard <code>git blame</code> stops at formatting and lint commits. <strong>git-lineage</strong> traverses Git history to surface the true introducing commit, PR discussions, and reviewer constraints.</p>
+      <h1>Don't just blame it.<br>Trace its <span style="color: var(--accent);">cynn</span>.</h1>
+      <p>Standard <code>git blame</code> stops at formatting and lint commits. <strong>cynn</strong> traverses Git history to surface the true introducing commit, PR discussions, and reviewer constraints.</p>
 
       <div class="install-box">
-        <code>$ brew install NayanSrivastav/tap/git-lineage</code>
-        <button class="copy-btn" onclick="navigator.clipboard.writeText('brew install NayanSrivastav/tap/git-lineage'); this.innerText = 'Copied!'; setTimeout(() => this.innerText = 'Copy', 2000);">Copy</button>
+        <code>$ cargo install cynn &nbsp;•&nbsp; brew install NayanSrivastav/tap/cynn</code>
+        <button class="copy-btn" onclick="navigator.clipboard.writeText('cargo install cynn'); this.innerText = 'Copied!'; setTimeout(() => this.innerText = 'Copy', 2000);">Copy</button>
       </div>
 
       <!-- Tab Toggle -->
@@ -334,7 +333,7 @@
           <span class="terminal-title" id="terminal-title">nayan@macbook: ~/projects/payment-service</span>
         </div>
         <div class="terminal-body" id="terminal-content">
-<span class="prompt">$</span> <span class="cmd">git lineage src/billing/stripe_webhook.ts:88</span>
+<span class="prompt">$</span> <span class="cmd">cynn src/billing/stripe_webhook.ts:88</span>
 
 <span class="t-cyan">╭─ Lineage: src/billing/stripe_webhook.ts:88 ───────────────────────────────────────╮</span>
 <span class="t-cyan">│ <span class="t-dim">›</span> <span class="t-white">if (event.id.startsWith("evt_test_") && payload.attempt > 1) { return 200; }</span> │</span>
@@ -369,12 +368,12 @@
 
         <div class="agent-grid">
           <div class="agent-card danger">
-            <h4><span style="color: #ef4444;">✕</span> Without git-lineage</h4>
+            <h4><span style="color: #ef4444;">✕</span> Without cynn</h4>
             <p><strong>The Silent Regression Trap:</strong><br>An agent sees an obscure retry check or defensive fallback. Lacking the incident context that created it, the agent considers it "redundant" and deletes it—reintroducing a critical production bug.</p>
           </div>
           <div class="agent-card success">
-            <h4><span style="color: #22c55e;">✓</span> With git-lineage (--json)</h4>
-            <p><strong>The Pre-Refactoring Invariant:</strong><br>The agent queries <code>git lineage &lt;file&gt;:&lt;lines&gt; --json</code> before refactoring. It receives the true origin PR discussion, reviewer constraints, and linked issues, safely preserving edge cases.</p>
+            <h4><span style="color: #22c55e;">✓</span> With cynn (--json)</h4>
+            <p><strong>The Pre-Refactoring Invariant:</strong><br>The agent queries <code>cynn &lt;file&gt;:&lt;lines&gt; --json</code> before refactoring. It receives the true origin PR discussion, reviewer constraints, and linked issues, safely preserving edge cases.</p>
           </div>
         </div>
       </div>
@@ -384,7 +383,7 @@
     <section class="container" id="confidence-tiers" style="padding: 60px 0;">
       <h2 class="section-title">Evidence &amp; Confidence Scoring Engine</h2>
       <p style="text-align: center; color: var(--text-dim); max-width: 780px; margin: -20px auto 40px;">
-        To prevent AI agent hallucinations, <code>git-lineage</code> strictly separates objective historical facts from inferred intent, categorizing evidence into four deterministic confidence tiers.
+        To prevent AI agent hallucinations, <code>cynn</code> strictly separates objective historical facts from inferred intent, categorizing evidence into four deterministic confidence tiers.
       </p>
 
       <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px;">
@@ -483,7 +482,7 @@
       <div class="container">
         <h2 class="section-title">The Archaeological Matrix: How vs. Why</h2>
         <p style="text-align: center; color: var(--text-dim); max-width: 780px; margin: -16px auto 32px;">
-          <code>git log -L</code> shows <strong>how</strong> code mutated over time with raw diffs. <strong>git-lineage</strong> answers <strong>why</strong> code was introduced by linking Git commits to PR descriptions, reviewer debates, and Jira tickets.
+          <code>git log -L</code> shows <strong>how</strong> code mutated over time with raw diffs. <strong>cynn</strong> answers <strong>why</strong> code was introduced by linking Git commits to PR descriptions, reviewer debates, and Jira tickets.
         </p>
         <div class="table-container">
           <table>
@@ -492,7 +491,7 @@
                 <th>Capability</th>
                 <th>git log -L (Git)</th>
                 <th>git blame + API script</th>
-                <th>git-lineage</th>
+                <th>cynn</th>
               </tr>
             </thead>
             <tbody>
@@ -565,12 +564,12 @@
 
   <footer>
     <div class="container">
-      <p>Licensed under the MIT License • Built with Rust • <a href="https://github.com/NayanSrivastav/git-lineage" style="color: var(--accent); text-decoration: none;">GitHub Repository</a></p>
+      <p>Licensed under the MIT License • Built with Rust • <a href="https://github.com/NayanSrivastav/cynn" style="color: var(--accent); text-decoration: none;">GitHub Repository</a></p>
     </div>
   </footer>
 
   <script>
-    const ansiContent = `<span class="prompt">$</span> <span class="cmd">git lineage src/billing/stripe_webhook.ts:88</span>
+    const ansiContent = `<span class="prompt">$</span> <span class="cmd">cynn src/billing/stripe_webhook.ts:88</span>
 
 <span class="t-cyan">╭─ Lineage: src/billing/stripe_webhook.ts:88 ───────────────────────────────────────╮</span>
 <span class="t-cyan">│ <span class="t-dim">›</span> <span class="t-white">if (event.id.startsWith("evt_test_") && payload.attempt > 1) { return 200; }</span> │</span>
@@ -593,7 +592,7 @@
    Review Note:   <span class="t-dim">alex: "Make sure this check only triggers on attempt > 1 so first attempt errors alert."</span>
    Confidence:    <span class="t-green">High (Explicit PR / reviewer rationale verified)</span>`;
 
-    const jsonContent = `<span class="prompt">$</span> <span class="cmd">git lineage src/billing/stripe_webhook.ts:88 --json</span>
+    const jsonContent = `<span class="prompt">$</span> <span class="cmd">cynn src/billing/stripe_webhook.ts:88 --json</span>
 
 <span class="t-dim">{</span>
   <span class="t-cyan">"file_path"</span>: <span class="t-green">"src/billing/stripe_webhook.ts"</span>,
@@ -631,7 +630,7 @@
         btnJson.classList.add('active');
         btnAnsi.classList.remove('active');
         content.innerHTML = jsonContent;
-        title.innerText = 'claude-code / cursor: tool_call git_lineage';
+        title.innerText = 'claude-code / cursor: tool_call cynn';
       } else {
         btnAnsi.classList.add('active');
         btnJson.classList.remove('active');

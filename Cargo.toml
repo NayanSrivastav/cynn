@@ -1,13 +1,19 @@
 [package]
-name = "git-lineage"
+name = "cynn"
 version = "0.2.3"
 edition = "2021"
 authors = ["Nayan Srivastava <nayansrivastav@yahoo.in>"]
-description = "The Codebase Archaeology CLI and Agent Forensic Primitive."
+description = "The Codebase Archaeology CLI and Agent Forensic Primitive. Don't just blame it, trace its cynn."
 readme = "README.md"
 license = "MIT"
-keywords = ["git", "archaeology", "blame", "cli", "forensics"]
+repository = "https://github.com/NayanSrivastav/cynn"
+homepage = "https://nayansrivastav.github.io/cynn/"
+keywords = ["git", "archaeology", "blame", "cli", "cynn", "forensics"]
 categories = ["command-line-utilities", "development-tools"]
+
+[lib]
+name = "cynn"
+path = "src/lib.rs"
 
 [dependencies]
 # CLI Parsing

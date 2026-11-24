@@ -102,7 +102,7 @@ pub fn fetch_gitlab_mr_api(
 
     let Ok(mut res) = ureq::get(&mr_url)
         .header("PRIVATE-TOKEN", token)
-        .header("User-Agent", "git-lineage")
+        .header("User-Agent", "cynn")
         .call()
     else {
         return (None, Vec::new());
@@ -188,7 +188,7 @@ pub fn fetch_gitlab_mr_api(
     );
     if let Ok(mut notes_res) = ureq::get(&notes_url)
         .header("PRIVATE-TOKEN", token)
-        .header("User-Agent", "git-lineage")
+        .header("User-Agent", "cynn")
         .call()
     {
         if let Ok(notes_val) = notes_res.body_mut().read_json::<serde_json::Value>() {

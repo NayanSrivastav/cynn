@@ -80,7 +80,7 @@ pub fn fetch_bitbucket_pr_api(
 
     let Ok(mut res) = ureq::get(&pr_url)
         .header("Authorization", &auth_header)
-        .header("User-Agent", "git-lineage")
+        .header("User-Agent", "cynn")
         .call()
     else {
         return (None, Vec::new());
@@ -170,7 +170,7 @@ pub fn fetch_bitbucket_pr_api(
     );
     if let Ok(mut com_res) = ureq::get(&comments_url)
         .header("Authorization", &auth_header)
-        .header("User-Agent", "git-lineage")
+        .header("User-Agent", "cynn")
         .call()
     {
         if let Ok(com_val) = com_res.body_mut().read_json::<serde_json::Value>() {
