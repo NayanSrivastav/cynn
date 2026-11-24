@@ -1,5 +1,5 @@
 use crate::enrich::match_pr::{
-    select_best_pr_candidate_with_audit, RejectedPrDecision, RemotePrCandidate,
+    select_best_pr_match_with_audit, PrAssociation, RejectedPrDecision, RemotePrCandidate,
 };
 use crate::git::PlatformKind;
 use serde::{Deserialize, Serialize};
@@ -26,6 +26,10 @@ pub struct PrDetails {
     pub reviewer_highlights: Vec<ReviewHighlight>,
     pub linked_issues: Vec<String>,
     pub all_matched_prs: Vec<u64>,
+    /// Set when the PR/MR is only an indirect association: the platform lists the commit inside it,
+    /// but the Jira keys differ or the commit carries none. Absent for exact matches.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub association: Option<PrAssociation>,
 }
 
 #[derive(Deserialize)]
@@ -227,21 +231,24 @@ pub fn fetch_github_pr_api(
                 source_branch,
                 url: pr_url,
                 author,
+                linked_by_platform: true,
             })
         })
         .collect();
 
     let all_matched_prs: Vec<u64> = candidates.iter().map(|c| c.id).collect();
-    let (best, rejected) = select_best_pr_candidate_with_audit(
+    let (best, rejected) = select_best_pr_match_with_audit(
         &candidates,
         commit_subject,
         commit_body,
         PlatformKind::GitHub,
     );
 
-    let Some(best) = best else {
+    let Some(matched) = best else {
         return (None, rejected);
     };
+    let association = matched.association.clone();
+    let best = matched.candidate;
 
     let number = best.id;
     let title = best.title.clone();
@@ -378,6 +385,7 @@ pub fn fetch_github_pr_api(
             reviewer_highlights,
             linked_issues,
             all_matched_prs,
+            association,
         }),
         rejected,
     )
@@ -470,20 +478,23 @@ fn resolve_pr_via_gh_cli(
             source_branch: p.head_ref_name.clone(),
             url: p.url.clone(),
             author: p.author.as_ref().and_then(|a| a.login.clone()),
+            linked_by_platform: true,
         })
         .collect();
 
     let all_matched_prs: Vec<u64> = candidates.iter().map(|c| c.id).collect();
-    let (matched_pr, rejected) = select_best_pr_candidate_with_audit(
+    let (matched_pr, rejected) = select_best_pr_match_with_audit(
         &candidates,
         commit_subject,
         commit_body,
         PlatformKind::GitHub,
     );
 
-    let Some(matched_pr) = matched_pr else {
+    let Some(matched) = matched_pr else {
         return (None, rejected);
     };
+    let association = matched.association.clone();
+    let matched_pr = matched.candidate;
 
     // Detailed PR view with discussions, reviews, and closing issues
     let mut view_cmd = Command::new("gh");
@@ -518,10 +529,9 @@ fn resolve_pr_via_gh_cli(
     if let Ok(view_out) = view_cmd.output() {
         if view_out.status.success() {
             if let Ok(details) = serde_json::from_slice::<GhPrViewJson>(&view_out.stdout) {
-                return (
-                    Some(build_pr_details(details, inline_comments, all_matched_prs)),
-                    rejected,
-                );
+                let mut pr = build_pr_details(details, inline_comments, all_matched_prs);
+                pr.association = association;
+                return (Some(pr), rejected);
             }
         }
     }
@@ -552,6 +562,7 @@ fn resolve_pr_via_gh_cli(
             reviewer_highlights: Vec::new(),
             linked_issues,
             all_matched_prs,
+            association,
         }),
         rejected,
     )
@@ -676,6 +687,7 @@ fn build_pr_details(
         reviewer_highlights,
         linked_issues,
         all_matched_prs,
+        association: None,
     }
 }
 

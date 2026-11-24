@@ -1,6 +1,7 @@
 use crate::core::accordion::AccordionSnippet;
 use crate::core::Target;
 use crate::enrich::github::PrDetails;
+use crate::enrich::match_pr::AssociationKind;
 pub use crate::enrich::match_pr::RejectedPrDecision;
 use crate::enrich::provider::resolve_remote_context;
 use crate::enrich::test_match::find_related_tests;
@@ -283,7 +284,12 @@ impl<'a> GenesisAnalyzer<'a> {
                 );
 
                 if pr_details.is_none() {
-                    for m in milestones.iter().rev() {
+                    for m in milestones
+                        .iter()
+                        .rev()
+                        .filter(|m| m.commit_sha != single_genesis_commit.sha)
+                        .take(3)
+                    {
                         if let Ok(m_commit) = self.repo.get_commit(&m.commit_sha) {
                             let (details, rejs) = resolve_remote_context(
                                 &self.repo.root,
@@ -529,6 +535,7 @@ impl<'a> GenesisAnalyzer<'a> {
     }
 
     /// Trace the full line history across revisions to reconstruct evolution milestones
+    #[allow(clippy::too_many_lines)]
     fn trace_provenance(
         &self,
         rel_path: &std::path::Path,
@@ -587,12 +594,27 @@ impl<'a> GenesisAnalyzer<'a> {
         // Single-origin block: Walk history to find earliest genesis milestone
         if let Some(history) = commits_history {
             if !history.is_empty() {
-                let total = history.len();
-                let genesis = history.last().unwrap().clone();
+                let initial_genesis_sha = origin_slices.first().map(|s| s.genesis_sha.as_str());
+                let (genesis, is_cross_file_blame) = if let Some(b_sha) = initial_genesis_sha {
+                    if history
+                        .iter()
+                        .any(|c| c.sha == b_sha || c.short_sha == b_sha)
+                    {
+                        (history.last().unwrap().clone(), false)
+                    } else if let Ok(blame_commit) = self.repo.get_commit(b_sha) {
+                        // The blame commit comes from a cross-file copy (-C -C) that log -L did not follow
+                        (blame_commit, true)
+                    } else {
+                        (history.last().unwrap().clone(), false)
+                    }
+                } else {
+                    (history.last().unwrap().clone(), false)
+                };
 
+                let total = history.len();
                 let mut milestones = Vec::new();
                 for (idx, commit) in history.into_iter().enumerate() {
-                    let is_genesis = idx == total - 1;
+                    let is_genesis = !is_cross_file_blame && idx == total - 1;
                     let pr_ref = Self::extract_pr_reference(&commit.subject, &commit.body);
 
                     milestones.push(EvolutionMilestone {
@@ -603,6 +625,21 @@ impl<'a> GenesisAnalyzer<'a> {
                         summary: commit.subject,
                         pr_reference: pr_ref,
                         is_genesis,
+                        history_resolved: true,
+                        fallback_used: false,
+                    });
+                }
+
+                if is_cross_file_blame {
+                    let pr_ref = Self::extract_pr_reference(&genesis.subject, &genesis.body);
+                    milestones.push(EvolutionMilestone {
+                        date: genesis.author_date.clone(),
+                        commit_sha: genesis.sha.clone(),
+                        short_sha: genesis.short_sha.clone(),
+                        author: genesis.author_name.clone(),
+                        summary: genesis.subject.clone(),
+                        pr_reference: pr_ref,
+                        is_genesis: true,
                         history_resolved: true,
                         fallback_used: false,
                     });
@@ -657,8 +694,21 @@ impl<'a> GenesisAnalyzer<'a> {
         pr_details: Option<&PrDetails>,
     ) -> (String, Confidence) {
         if let Some(pr) = pr_details {
+            // An associated MR is only an indirect link, so it never reaches High confidence.
+            // - MissingCommitKey: the MR is usually the feature MR the commit came from, so its
+            //   description is used, capped at Medium.
+            // - KeyDiscrepancy: the MR is often a bundle (hotfix, merge train) whose description covers
+            //   other work, so its description is not used as the intent. The commit body is tried first.
+            let kind = pr.association.as_ref().map(|a| a.kind);
+            let use_pr_rationale = kind != Some(AssociationKind::KeyDiscrepancy);
+            let (pr_label, pr_confidence) = if kind.is_some() {
+                (format!("{} [associated MR]", pr.title), Confidence::Medium)
+            } else {
+                (pr.title.clone(), Confidence::High)
+            };
+
             // Case 1: Substantive PR description
-            if let Some(ref summary) = pr.body_summary {
+            if let Some(summary) = pr.body_summary.as_ref().filter(|_| use_pr_rationale) {
                 if summary.trim().len() > 20 {
                     let full_intent =
                         if let Some(h) = pr.reviewer_highlights.iter().find(|h| h.is_technical) {
@@ -666,16 +716,18 @@ impl<'a> GenesisAnalyzer<'a> {
                         } else {
                             summary.clone()
                         };
-                    return (format!("{}: {}", pr.title, full_intent), Confidence::High);
+                    return (format!("{pr_label}: {full_intent}"), pr_confidence);
                 }
             }
 
             // Case 2: Substantive technical reviewer rationale
-            if let Some(h) = pr.reviewer_highlights.iter().find(|h| h.is_technical) {
-                return (
-                    format!("{}: Technical Review ({}): {}", pr.title, h.author, h.body),
-                    Confidence::High,
-                );
+            if use_pr_rationale {
+                if let Some(h) = pr.reviewer_highlights.iter().find(|h| h.is_technical) {
+                    return (
+                        format!("{pr_label}: Technical Review ({}): {}", h.author, h.body),
+                        pr_confidence,
+                    );
+                }
             }
         }
 
@@ -686,7 +738,15 @@ impl<'a> GenesisAnalyzer<'a> {
 
         // Case 4: PR title only (low confidence)
         if let Some(pr) = pr_details {
-            return (format!("PR #{}: {}", pr.number, pr.title), Confidence::Low);
+            let tag = if pr.association.is_some() {
+                " [associated MR]"
+            } else {
+                ""
+            };
+            return (
+                format!("PR #{}: {}{tag}", pr.number, pr.title),
+                Confidence::Low,
+            );
         }
 
         // Case 5: Commit subject only
@@ -791,8 +851,16 @@ impl<'a> GenesisAnalyzer<'a> {
             if let Some(ref body) = pr.body_summary {
                 evidence.push(EvidenceItem {
                     category: "historical_rationale".to_string(),
-                    evidence_type: "pull_request_body".to_string(),
-                    source: format!("PR #{}", pr.number),
+                    evidence_type: if pr.association.is_some() {
+                        "associated_pull_request_body".to_string()
+                    } else {
+                        "pull_request_body".to_string()
+                    },
+                    source: if pr.association.is_some() {
+                        format!("PR #{} (associated)", pr.number)
+                    } else {
+                        format!("PR #{}", pr.number)
+                    },
                     author: pr.author.clone(),
                     url: Some(pr.url.clone()),
                     excerpt: body.clone(),
@@ -806,7 +874,11 @@ impl<'a> GenesisAnalyzer<'a> {
                     } else {
                         "review_discussion".to_string()
                     },
-                    source: format!("PR #{}", pr.number),
+                    source: if pr.association.is_some() {
+                        format!("PR #{} (associated)", pr.number)
+                    } else {
+                        format!("PR #{}", pr.number)
+                    },
                     author: Some(highlight.author.clone()),
                     url: highlight.url.clone(),
                     excerpt: highlight.body.clone(),
@@ -865,5 +937,88 @@ impl<'a> GenesisAnalyzer<'a> {
             }
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod association_confidence_tests {
+    use super::*;
+    use crate::enrich::match_pr::PrAssociation;
+
+    fn commit(subject: &str, body: &str) -> CommitInfo {
+        CommitInfo {
+            sha: "a".repeat(40),
+            short_sha: "aaaaaaaa".to_string(),
+            author_name: "dev".to_string(),
+            author_email: "dev@example.com".to_string(),
+            author_date: "2026-11-01".to_string(),
+            subject: subject.to_string(),
+            body: body.to_string(),
+        }
+    }
+
+    fn pr(association: Option<AssociationKind>) -> PrDetails {
+        PrDetails {
+            number: 608,
+            title: "COLL-7329: split qTest logs".to_string(),
+            url: "https://gitlab.com/x/-/merge_requests/608".to_string(),
+            author: None,
+            body_summary: Some(
+                "Write incremental logs as ranged files with a lookback window".to_string(),
+            ),
+            reviewer_highlights: Vec::new(),
+            linked_issues: Vec::new(),
+            all_matched_prs: vec![608],
+            association: association.map(|kind| PrAssociation {
+                kind,
+                note: "Associated via !608 (COLL-7329)".to_string(),
+            }),
+        }
+    }
+
+    #[test]
+    fn exact_match_keeps_high_confidence() {
+        let (intent, conf) = GenesisAnalyzer::evaluate_intent_and_confidence_inner(
+            &commit("COLL-7329: split logs", ""),
+            Some(&pr(None)),
+        );
+        assert_eq!(conf, Confidence::High);
+        assert!(!intent.contains("[associated MR]"));
+    }
+
+    #[test]
+    fn missing_commit_key_association_uses_mr_body_at_medium() {
+        let (intent, conf) = GenesisAnalyzer::evaluate_intent_and_confidence_inner(
+            &commit("temp", ""),
+            Some(&pr(Some(AssociationKind::MissingCommitKey))),
+        );
+        assert_eq!(conf, Confidence::Medium);
+        assert!(intent.contains("[associated MR]"));
+        assert!(intent.contains("ranged files"));
+    }
+
+    #[test]
+    fn key_discrepancy_association_does_not_use_mr_body_as_intent() {
+        let (intent, conf) = GenesisAnalyzer::evaluate_intent_and_confidence_inner(
+            &commit(
+                "COLL-7391: fix",
+                "Take field names from the first records when definitions are empty",
+            ),
+            Some(&pr(Some(AssociationKind::KeyDiscrepancy))),
+        );
+        assert_eq!(conf, Confidence::Medium);
+        assert!(intent.contains("Take field names"));
+        assert!(!intent.contains("ranged files"));
+    }
+
+    #[test]
+    fn key_discrepancy_without_commit_body_falls_to_low_title_only() {
+        let (intent, conf) = GenesisAnalyzer::evaluate_intent_and_confidence_inner(
+            &commit("COLL-7391: fix", ""),
+            Some(&pr(Some(AssociationKind::KeyDiscrepancy))),
+        );
+        assert_eq!(conf, Confidence::Low);
+        assert!(intent.contains("[associated MR]"));
+        assert!(!intent.contains("ranged files"));
     }
 }

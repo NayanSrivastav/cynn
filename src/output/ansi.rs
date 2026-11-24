@@ -221,6 +221,9 @@ pub fn render_ansi(dossier: &LineageDossier) -> String {
             "   Context URL:   {}\n",
             pr.url.underline().blue()
         ));
+        if let Some(ref assoc) = pr.association {
+            out.push_str(&format!("   Association:   {}\n", assoc.note.yellow()));
+        }
         if !pr.linked_issues.is_empty() {
             out.push_str(&format!(
                 "   Linked Issues: {}\n",

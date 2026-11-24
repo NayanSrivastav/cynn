@@ -18,6 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.3] - 2026-11-24
+
+### Fixed
+- **Platform-Linked MR Association**: Prevent false disqualifications when a commit carries no Jira ticket key (e.g., "temp" or WIP commits) but the platform-linked Merge Request provides the ticket key. The MR is now accurately associated.
+- **Bundle & Hotfix MR Handling**: Platform-linked MRs with mismatched ticket keys (e.g. commit COLL-7391 inside bundle MR !622 titled COLL-7357) are no longer rejected with `pr_details: None`. They are accepted as associated bundle MRs with review discussions preserved and an explicit audit warning recorded.
+- **Cross-File Copy Attribution**: Added `-C -C -M` copy and rename detection flags to `trace_line_evolution` and prevented line history walkback from overwriting cross-file copy-detected genesis commits discovered by deep blame.
+- **Network Latency & Milestone Fallback**: Eliminated redundant sequential HTTP network requests by adding in-memory session caching for remote commit PR lookups and bounding milestone fallback queries to at most 3 commits.
+
+---
+
 ## [0.2.2] - 2026-11-23
 
 ### Added
