@@ -114,6 +114,9 @@ pub fn render_markdown(dossier: &LineageDossier) -> String {
                 "- **Pull Request / MR:** [{}]({})\n",
                 pr.title, pr.url
             ));
+            if let Some(ref assoc) = pr.association {
+                out.push_str(&format!("- **Association:** {}\n", assoc.note));
+            }
             if !pr.linked_issues.is_empty() {
                 out.push_str(&format!(
                     "- **Linked Issues:** {}\n",

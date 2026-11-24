@@ -6,6 +6,12 @@ use crate::git::{CommitInfo, PlatformKind, RemoteInfo};
 use std::io::IsTerminal;
 use std::path::Path;
 
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+type RemoteCacheResult = (Option<PrDetails>, Vec<RejectedPrDecision>);
+static COMMIT_REMOTE_CACHE: Mutex<Option<HashMap<String, RemoteCacheResult>>> = Mutex::new(None);
+
 /// Resolve remote context (PR, MR, issues, discussions) across GitHub, GitLab, Bitbucket, and Generic Git.
 /// Supports both Direct HTTPS APIs with Token, local CLI sessions (gh/glab), and offline Git trailers.
 pub fn resolve_remote_context(
@@ -17,9 +23,21 @@ pub fn resolve_remote_context(
         .map(|r| r.platform)
         .unwrap_or(PlatformKind::Generic);
 
+    let host = remote_info.map(|r| r.host.as_str()).unwrap_or("local");
+    let owner_repo = remote_info.map(|r| r.owner_repo.as_str()).unwrap_or("");
+    let cache_key = format!("{platform:?}:{host}:{owner_repo}:{}", commit.sha);
+
+    if let Ok(guard) = COMMIT_REMOTE_CACHE.lock() {
+        if let Some(map) = guard.as_ref() {
+            if let Some(cached) = map.get(&cache_key) {
+                return cached.clone();
+            }
+        }
+    }
+
     let manual_token = check_or_prompt_token(remote_info);
 
-    match platform {
+    let res = match platform {
         PlatformKind::GitHub => {
             let owner_repo = remote_info.map(|r| r.owner_repo.as_str());
             let (pr, rejected) = resolve_github_pr(
@@ -31,9 +49,10 @@ pub fn resolve_remote_context(
                 manual_token.as_deref(),
             );
             if let Some(pr) = pr {
-                return (Some(pr), rejected);
+                (Some(pr), rejected)
+            } else {
+                (resolve_generic_trailer(remote_info, commit), rejected)
             }
-            (resolve_generic_trailer(remote_info, commit), rejected)
         }
         PlatformKind::GitLab => {
             let (mr, rejected) = resolve_gitlab_mr(
@@ -45,9 +64,10 @@ pub fn resolve_remote_context(
                 manual_token.as_deref(),
             );
             if let Some(mr) = mr {
-                return (Some(mr), rejected);
+                (Some(mr), rejected)
+            } else {
+                (resolve_generic_trailer(remote_info, commit), rejected)
             }
-            (resolve_generic_trailer(remote_info, commit), rejected)
         }
         PlatformKind::Bitbucket => {
             let (pr, rejected) = resolve_bitbucket_pr(
@@ -59,12 +79,20 @@ pub fn resolve_remote_context(
                 manual_token.as_deref(),
             );
             if let Some(pr) = pr {
-                return (Some(pr), rejected);
+                (Some(pr), rejected)
+            } else {
+                (resolve_generic_trailer(remote_info, commit), rejected)
             }
-            (resolve_generic_trailer(remote_info, commit), rejected)
         }
         PlatformKind::Generic => (resolve_generic_trailer(remote_info, commit), Vec::new()),
+    };
+
+    if let Ok(mut guard) = COMMIT_REMOTE_CACHE.lock() {
+        let map = guard.get_or_insert_with(HashMap::new);
+        map.insert(cache_key, res.clone());
     }
+
+    res
 }
 
 /// Check environment for tokens; if none exist and terminal is interactive, prompt the user.
@@ -179,6 +207,7 @@ fn resolve_generic_trailer(
                         reviewer_highlights: Vec::new(),
                         linked_issues: extract_trailer_issues(&full_text),
                         all_matched_prs: vec![number],
+                        association: None,
                     });
                 }
             }
